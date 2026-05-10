@@ -128,17 +128,27 @@ function fmtMoney(value) {
 export function updateMultiDashboard(accounts, config) {
     if (!active || !summaryBox || !detailBox) return;
 
+    const totalStart = accounts.reduce((sum, account) => sum + (account.startBalance || config.simStartBalance), 0);
+    const totalCash = accounts.reduce((sum, account) => sum + account.cash, 0);
+    const totalOpenCost = accounts.reduce((sum, account) => sum + account.openCost, 0);
+    const totalEquity = accounts.reduce((sum, account) => sum + account.equity, 0);
+    const totalPnl = totalEquity - totalStart;
+    const totalPnlColor = totalPnl >= 0 ? 'green-fg' : 'red-fg';
+
     const summaryLines = [];
     summaryLines.push(` {yellow-fg}[SIMULATION]{/yellow-fg} tracking ${accounts.length} wallet(s)`);
     summaryLines.push(` {gray-fg}${'-'.repeat(40)}{/gray-fg}`);
+    summaryLines.push(` Total Equity: {bold}$${totalEquity.toFixed(2)}{/bold} | PnL {${totalPnlColor}}${fmtMoney(totalPnl)}{/${totalPnlColor}}`);
+    summaryLines.push(` Cash $${totalCash.toFixed(2)} | Open Cost $${totalOpenCost.toFixed(2)} | Start $${totalStart.toFixed(2)}`);
     summaryLines.push(` Size: ${config.sizeMode} ${config.sizePercent}% | Cap: $${config.maxPositionSize}`);
     summaryLines.push('');
 
     for (const account of accounts) {
-        const pnlColor = account.realizedPnl >= 0 ? 'green-fg' : 'red-fg';
+        const pnlColor = account.totalPnl >= 0 ? 'green-fg' : 'red-fg';
         summaryLines.push(` {bold}${shortAddr(account.address)}{/bold}`);
+        summaryLines.push(`  Equity $${account.equity.toFixed(2)} | PnL {${pnlColor}}${fmtMoney(account.totalPnl)}{/${pnlColor}}`);
         summaryLines.push(`  Cash $${account.cash.toFixed(2)} | Open ${account.positions.length} | Cost $${account.openCost.toFixed(2)}`);
-        summaryLines.push(`  Buys ${account.totalBuys} | Sells ${account.totalSells} | PnL {${pnlColor}}${fmtMoney(account.realizedPnl)}{/${pnlColor}}`);
+        summaryLines.push(`  Buys ${account.totalBuys} | Sells ${account.totalSells} | Realized ${fmtMoney(account.realizedPnl)}`);
     }
 
     summaryLines.push('');

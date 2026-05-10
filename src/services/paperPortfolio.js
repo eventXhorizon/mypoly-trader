@@ -206,11 +206,15 @@ export function portfolioSummary() {
     return Object.values(state.accounts || {}).map((account) => {
         const positions = Object.values(account.positions || {});
         const openCost = positions.reduce((sum, pos) => sum + (pos.totalCost || 0), 0);
+        const startBalance = account.startBalance || config.simStartBalance;
+        const equity = account.cash + openCost;
         return {
             ...account,
+            startBalance,
             positions,
             openCost,
-            equity: account.cash + openCost,
+            equity,
+            totalPnl: equity - startBalance,
         };
     });
 }
