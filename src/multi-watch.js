@@ -23,6 +23,8 @@ async function handleTrade(trade) {
     } else if (result.action === 'sell') {
         const sign = result.pnl >= 0 ? '+' : '';
         logger.trade(`[${shortAddr(trade.traderAddress)}] PAPER SELL ${result.shares.toFixed(3)} sh @ $${trade.price} | ${sign}$${result.pnl.toFixed(2)}`);
+    } else if (result.reason === 'below minimum' || result.reason === 'market cap reached') {
+        // Expected simulation skips are stored in Recent; avoid flooding the live log.
     } else {
         logger.warn(`[${shortAddr(trade.traderAddress)}] skipped ${trade.type}: ${result.reason}`);
     }

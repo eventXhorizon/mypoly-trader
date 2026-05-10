@@ -52,12 +52,13 @@ function stringify(args) {
 
 function log(ansiColor, bColor, emoji, level, ...args) {
     const msg = stringify(args);
+    const cleanEmoji = process.env.LOG_ASCII === 'true' ? '' : emoji;
     if (outputFn) {
         const [open, close] = bColor;
-        outputFn(`{gray-fg}[${ts()}]{/gray-fg} ${open}${emoji} ${level}${close} ${msg}`);
+        outputFn(`{gray-fg}[${ts()}]{/gray-fg} ${open}${cleanEmoji} ${level}${close} ${msg}`);
     } else {
         process.stdout.write(
-            `${A.dim}[${ts()}]${A.reset} ${ansiColor}${emoji} ${level}${A.reset} ${msg}\n`,
+            `${A.dim}[${ts()}]${A.reset} ${ansiColor}${cleanEmoji} ${level}${A.reset} ${msg}\n`,
         );
     }
 }

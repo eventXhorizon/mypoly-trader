@@ -19,12 +19,26 @@ function emptyAccount(address) {
     };
 }
 
-function keyFor(trade) {
+function positionKeyFor(trade) {
     return trade.tokenId || trade.conditionId;
 }
 
 function shortMarket(name) {
     return (name || '').replace(/\s+/g, ' ').trim();
+}
+
+function marketKeyForTrade(trade) {
+    return trade.conditionId || shortMarket(trade.market).toLowerCase() || trade.tokenId;
+}
+
+function marketKeyForPosition(position) {
+    return position.marketKey || position.conditionId || shortMarket(position.market).toLowerCase() || position.tokenId;
+}
+
+function marketCost(account, marketKey) {
+    return Object.values(account.positions || {}).reduce((sum, position) => {
+        return marketKeyForPosition(position) === marketKey ? sum + (position.totalCost || 0) : sum;
+    }, 0);
 }
 
 export function getPortfolios() {
@@ -70,10 +84,11 @@ export function applyPaperTrade(trade) {
 
     const address = trade.traderAddress.toLowerCase();
     const account = state.accounts[address] || emptyAccount(address);
-    const posKey = keyFor(trade);
+    const posKey = positionKeyFor(trade);
+    const marketKey = marketKeyForTrade(trade);
     const price = Number.isFinite(trade.price) && trade.price > 0 ? trade.price : 0;
 
-    if (!posKey || price <= 0) {
+    if (!posKey || !marketKey || price <= 0) {
         appendRecent(account, {
             type: trade.type,
             market: shortMarket(trade.market || trade.tokenId),
@@ -86,22 +101,25 @@ export function applyPaperTrade(trade) {
 
     if (trade.type === 'BUY') {
         const existing = account.positions[posKey];
-        const alreadySpent = existing?.totalCost || 0;
+        const alreadySpent = marketCost(account, marketKey);
         const remainingCap = Math.max(0, config.maxPositionSize - alreadySpent);
         let cost = Math.min(tradeSize(account), remainingCap, account.cash);
 
         const effectiveMin = Math.max(config.minTradeSize, 1);
         if (cost < effectiveMin) {
+            const reason = remainingCap <= 0 ? 'market cap reached' : 'below minimum';
             account.skippedBuys += 1;
             appendRecent(account, {
                 type: 'BUY',
                 market: shortMarket(trade.market || trade.tokenId),
-                note: `skipped size $${cost.toFixed(2)} < $${effectiveMin}`,
+                note: reason === 'market cap reached'
+                    ? `skipped cap $${config.maxPositionSize.toFixed(2)} per market`
+                    : `skipped size $${cost.toFixed(2)} < $${effectiveMin}`,
             });
             account.updatedAt = new Date().toISOString();
             state.accounts[address] = account;
             savePortfolios(state);
-            return { action: 'skipped', reason: 'below minimum', account };
+            return { action: 'skipped', reason, account };
         }
 
         const shares = cost / price;
@@ -114,12 +132,14 @@ export function applyPaperTrade(trade) {
                 totalCost: newTotalCost,
                 avgBuyPrice: newTotalCost / newShares,
                 lastPrice: price,
+                marketKey: existing.marketKey || marketKey,
                 updatedAt: new Date().toISOString(),
             };
         } else {
             account.positions[posKey] = {
                 conditionId: trade.conditionId,
                 tokenId: trade.tokenId,
+                marketKey,
                 market: shortMarket(trade.market || trade.tokenId),
                 outcome: trade.outcome || '',
                 shares,

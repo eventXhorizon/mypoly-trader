@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon --ignore 'data/*.json' src/index.js",
-    "multi-watch": "node src/multi-watch.js",
+    "multi-watch": "LOG_ASCII=true node src/multi-watch.js",
     "bot": "node src/bot.js",
     "bot-sim": "DRY_RUN=true node src/bot.js",
     "bot-dev": "DRY_RUN=true nodemon --ignore 'data/*.json' src/bot.js",

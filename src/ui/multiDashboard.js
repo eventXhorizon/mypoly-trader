@@ -12,8 +12,8 @@ export function initMultiDashboard() {
     screen = blessed.screen({
         smartCSR: false,
         title: 'Polymarket Multi-Wallet Simulation',
-        fullUnicode: true,
-        forceUnicode: true,
+        fullUnicode: false,
+        forceUnicode: false,
     });
 
     logBox = blessed.log({
