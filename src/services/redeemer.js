@@ -4,6 +4,7 @@ import { getPolygonProvider } from './client.js';
 import { execSafeCall, CTF_ADDRESS, USDC_ADDRESS } from './ctf.js';
 import { getOpenPositions, removePosition } from './position.js';
 import { recordSimResult } from '../utils/simStats.js';
+import { releasePaperBalance } from '../utils/paperBalance.js';
 import logger from '../utils/logger.js';
 import { proxyFetch } from '../utils/proxy.js';
 
@@ -118,12 +119,14 @@ async function simulateRedeem(position) {
             `[SIM] WIN! "${position.market}" | ${position.outcome} won` +
             ` | +$${pnl.toFixed(2)} (+${((pnl / position.totalCost) * 100).toFixed(1)}%)`,
         );
+        releasePaperBalance(returned, pnl);
         recordSimResult(position, 'WIN', pnl, returned);
     } else {
         logger.error(
             `[SIM] LOSS: "${position.market}" | ${position.outcome} lost` +
             ` | -$${position.totalCost.toFixed(2)} (-100%)`,
         );
+        releasePaperBalance(returned, pnl);
         recordSimResult(position, 'LOSS', pnl, returned);
     }
 

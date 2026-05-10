@@ -12,6 +12,7 @@ import { checkAndRedeemPositions } from './services/redeemer.js';
 import { getOpenPositions } from './services/position.js';
 import { startWsWatcher, stopWsWatcher } from './services/wsWatcher.js';
 import { getSimStats } from './utils/simStats.js';
+import { getPaperBalance } from './utils/paperBalance.js';
 import logger from './utils/logger.js';
 
 logger.interceptConsole(); // strip auth headers from CLOB axios error dumps
@@ -29,10 +30,10 @@ async function handleTrade(trade) {
 // ── Periodic status log (replaces TUI right panel) ────────────────────────────
 async function printStatus() {
     try {
-        const balance   = await getUsdcBalance();
+        const balance   = config.dryRun ? getPaperBalance() : await getUsdcBalance();
         const positions = getOpenPositions();
 
-        logger.info(`--- Status | Balance: $${balance.toFixed(2)} USDC | Open positions: ${positions.length} ---`);
+        logger.info(`--- Status | ${config.dryRun ? 'Paper balance' : 'Balance'}: $${balance.toFixed(2)} | Open positions: ${positions.length} ---`);
 
         for (const pos of positions) {
             let pnlStr = '';
@@ -111,8 +112,8 @@ async function main() {
     }
 
     try {
-        const balance = await getUsdcBalance();
-        logger.money(`USDC.e Balance: $${balance.toFixed(2)}`);
+        const balance = config.dryRun ? getPaperBalance() : await getUsdcBalance();
+        logger.money(`${config.dryRun ? 'Paper balance' : 'USDC.e Balance'}: $${balance.toFixed(2)}`);
     } catch (err) {
         logger.warn('Could not fetch balance:', err.message);
     }

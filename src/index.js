@@ -5,6 +5,7 @@ import { checkAndRedeemPositions } from './services/redeemer.js';
 import { getOpenPositions } from './services/position.js';
 import { startWsWatcher, stopWsWatcher } from './services/wsWatcher.js';
 import { getSimStats } from './utils/simStats.js';
+import { getPaperBalance, getPaperBalanceState } from './utils/paperBalance.js';
 import { initDashboard, appendLog, updateStatus } from './ui/dashboard.js';
 import logger from './utils/logger.js';
 
@@ -37,9 +38,11 @@ async function buildStatusContent() {
 
     // Balance
     try {
-        const balance = await getUsdcBalance();
+        const balance = config.dryRun ? getPaperBalance() : await getUsdcBalance();
         const balColor = balance > 0 ? 'green-fg' : 'gray-fg';
-        lines.push(` {yellow-fg}💵 Balance:{/yellow-fg} {bold}{${balColor}}$${balance.toFixed(2)} USDC.e{/${balColor}}{/bold}`);
+        const label = config.dryRun ? 'Paper Balance' : 'Balance';
+        const suffix = config.dryRun ? ' SIM' : ' USDC.e';
+        lines.push(` {yellow-fg}💵 ${label}:{/yellow-fg} {bold}{${balColor}}$${balance.toFixed(2)}${suffix}{/${balColor}}{/bold}`);
     } catch {
         lines.push(` {yellow-fg}💵 Balance:{/yellow-fg} {gray-fg}N/A{/gray-fg}`);
     }
@@ -103,11 +106,12 @@ async function buildStatusContent() {
             );
         }
 
-        const pnl = s.closedPnl || 0;
-        if (pnl !== 0) {
-            const sign = pnl >= 0 ? '+' : '';
-            const c = pnl >= 0 ? 'green-fg' : 'red-fg';
-            lines.push(`  Realized P&L : {${c}}{bold}${sign}$${pnl.toFixed(2)}{/bold}{/${c}}`);
+        const paper = getPaperBalanceState();
+        const paperPnl = paper.realizedPnl || 0;
+        if (paperPnl !== 0) {
+            const sign = paperPnl >= 0 ? '+' : '';
+            const c = paperPnl >= 0 ? 'green-fg' : 'red-fg';
+            lines.push(`  Realized P&L : {${c}}{bold}${sign}$${paperPnl.toFixed(2)}{/bold}{/${c}}`);
         }
 
         if (s.closedPositions && s.closedPositions.length > 0) {
@@ -188,8 +192,8 @@ async function main() {
 
     // Initial balance display
     try {
-        const balance = await getUsdcBalance();
-        logger.money(`USDC.e Balance: $${balance.toFixed(2)}`);
+        const balance = config.dryRun ? getPaperBalance() : await getUsdcBalance();
+        logger.money(`${config.dryRun ? 'Paper balance' : 'USDC.e Balance'}: $${balance.toFixed(2)}`);
     } catch (err) {
         logger.warn('Could not fetch balance:', err.message);
     }

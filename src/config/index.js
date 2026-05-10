@@ -22,6 +22,9 @@ const config = {
 
   // Trader to copy
   traderAddress: process.env.TRADER_ADDRESS,
+  traderAddresses: (process.env.TRADER_ADDRESSES || process.env.TRADER_ADDRESS || '')
+    .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
+  simStartBalance: parseFloat(process.env.SIM_START_BALANCE || '100'),
 
   // Trade sizing
   sizeMode: process.env.SIZE_MODE || 'percentage', // "percentage" | "balance"
@@ -177,6 +180,23 @@ export function validateConfig() {
   if (!['market', 'limit'].includes(config.sellMode)) {
     throw new Error(`Invalid SELL_MODE: ${config.sellMode}. Use "market" or "limit".`);
   }
+}
+
+// Validation for pure multi-wallet simulation watcher
+export function validateMultiWatchConfig() {
+  if (config.traderAddresses.length === 0) {
+    throw new Error('Missing TRADER_ADDRESSES. Set comma-separated target wallet addresses in your .env file.');
+  }
+  const invalid = config.traderAddresses.filter((addr) => !/^0x[a-f0-9]{40}$/.test(addr));
+  if (invalid.length > 0) {
+    throw new Error(`Invalid TRADER_ADDRESSES value(s): ${invalid.join(', ')}`);
+  }
+  if (!['percentage', 'balance'].includes(config.sizeMode)) {
+    throw new Error(`Invalid SIZE_MODE: ${config.sizeMode}. Use "percentage" or "balance".`);
+  }
+  if (config.simStartBalance <= 0) throw new Error('SIM_START_BALANCE must be > 0');
+  if (config.sizePercent <= 0) throw new Error('SIZE_PERCENT must be > 0');
+  if (config.maxPositionSize <= 0) throw new Error('MAX_POSITION_SIZE must be > 0');
 }
 
 // Validation for market-maker bot

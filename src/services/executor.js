@@ -7,6 +7,7 @@ import { fetchMarketByTokenId } from './watcher.js';
 import { placeAutoSell } from './autoSell.js';
 import { ensureExchangeApproval, CTF_ADDRESS } from './ctf.js';
 import { recordSimBuy } from '../utils/simStats.js';
+import { getPaperBalance, reservePaperBalance, releasePaperBalance } from '../utils/paperBalance.js';
 import logger from '../utils/logger.js';
 
 const CTF_ABI_BALANCE = ['function balanceOf(address account, uint256 id) view returns (uint256)'];
@@ -39,13 +40,13 @@ async function getOnChainTokenBalance(tokenId) {
  * would give inconsistent (often sub-minimum) results.
  *
  * SIZE_MODE=percentage → SIZE_PERCENT% of MAX_POSITION_SIZE per market
- * SIZE_MODE=balance    → SIZE_PERCENT% of our current USDC.e balance
+ * SIZE_MODE=balance    → SIZE_PERCENT% of current balance
  */
 async function calculateTradeSize() {
     if (config.sizeMode === 'percentage') {
         return config.maxPositionSize * (config.sizePercent / 100);
     } else if (config.sizeMode === 'balance') {
-        const balance = await getUsdcBalance();
+        const balance = config.dryRun ? getPaperBalance() : await getUsdcBalance();
         return balance * (config.sizePercent / 100);
     }
     return 0;
@@ -232,7 +233,7 @@ async function _doExecuteBuy(trade, marketOpts, effectiveConditionId) {
     }
 
     // Check balance
-    const balance = await getUsdcBalance();
+    const balance = config.dryRun ? getPaperBalance() : await getUsdcBalance();
     if (balance < tradeSize) {
         logger.error(`Insufficient balance: $${balance.toFixed(2)} < $${tradeSize.toFixed(2)} needed`);
         return;
@@ -242,6 +243,7 @@ async function _doExecuteBuy(trade, marketOpts, effectiveConditionId) {
 
     if (config.dryRun) {
         logger.trade(`[SIM] BUY ${market || tokenId} | $${tradeSize.toFixed(2)} @ $${price} | outcome: ${trade.outcome || '?'}`);
+        reservePaperBalance(tradeSize);
         const dryShares = tradeSize / price;
         if (existingPos) {
             const newShares = existingPos.shares + dryShares;
@@ -409,6 +411,10 @@ export async function executeSell(trade) {
 
     if (config.dryRun) {
         logger.info('[DRY RUN] Would place sell order');
+        const sellPrice = Number.isFinite(price) && price > 0 ? price : position.avgBuyPrice;
+        const returned = position.shares * sellPrice;
+        const pnl = returned - (position.totalCost || 0);
+        releasePaperBalance(returned, pnl);
         removePosition(effectiveConditionId);
         return;
     }
