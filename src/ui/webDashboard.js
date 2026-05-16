@@ -99,7 +99,13 @@ function appendLog(rawText) {
 
 function publicConfig(config) {
     return {
+        mode: config.dashboardMode || 'simulation',
+        title: config.dashboardTitle || 'Polymarket Multi-Watch',
+        subtitle: config.dashboardSubtitle || 'simulation dashboard',
         traderAddresses: config.traderAddresses,
+        traderAddress: config.traderAddress,
+        proxyWallet: config.proxyWallet,
+        dryRun: config.dryRun,
         sizeMode: config.sizeMode,
         sizePercent: config.sizePercent,
         minTradeSize: config.minTradeSize,
@@ -113,7 +119,10 @@ function publicConfig(config) {
 }
 
 async function setDashboardState(accounts, config) {
-    const pnl = await getPnlReport(config.pnlHistoryLimit);
+    const mode = config.dashboardMode || 'simulation';
+    const pnl = mode === 'multi-watch'
+        ? await getPnlReport(config.pnlHistoryLimit)
+        : { enabled: false, summary: null, byWallet: [], trades: [], snapshots: [] };
     currentState = {
         accounts,
         config: publicConfig(config),
@@ -595,7 +604,7 @@ function html() {
   <header>
     <div>
       <h1>Polymarket Multi-Watch</h1>
-      <div class="subtle">simulation dashboard</div>
+      <div id="subtitle" class="subtle">simulation dashboard</div>
     </div>
     <div class="header-tools">
       <button id="themeToggle" type="button">Theme</button>
@@ -690,6 +699,8 @@ function html() {
     const els = {
       dot: document.getElementById('dot'),
       status: document.getElementById('status'),
+      title: document.querySelector('h1'),
+      subtitle: document.getElementById('subtitle'),
       totalEquity: document.getElementById('totalEquity'),
       totalPnl: document.getElementById('totalPnl'),
       totalCash: document.getElementById('totalCash'),
@@ -766,6 +777,7 @@ function html() {
     }
 
     function fillSettingsForm(cfg) {
+      if (cfg.mode !== 'multi-watch') return;
       if (settingsDirty) return;
       els.targetWallets.value = (cfg.traderAddresses || []).join('\\n');
       els.simStartBalance.value = numberInputValue(cfg.simStartBalance);
@@ -812,15 +824,20 @@ function html() {
 
     function renderState(state) {
       const totals = state.totals || {};
+      const cfg = state.config || {};
+      els.title.textContent = cfg.title || 'Polymarket Dashboard';
+      els.subtitle.textContent = cfg.subtitle || (cfg.dryRun ? 'simulation dashboard' : 'live dashboard');
       els.totalEquity.textContent = money(totals.totalEquity);
       els.totalPnl.textContent = money(totals.totalPnl, true);
       setPnlClass(els.totalPnl, totals.totalPnl);
       els.totalCash.textContent = money(totals.totalCash);
       els.openCost.textContent = money(totals.totalOpenCost);
 
-      const cfg = state.config || {};
       els.settings.textContent = 'Size ' + (cfg.sizeMode || '-') + ' ' + (cfg.sizePercent ?? '-') + '% | Cap ' + money(cfg.maxPositionSize);
       els.updatedAt.textContent = state.updatedAt ? new Date(state.updatedAt).toLocaleTimeString() : '';
+      const isMultiWatch = cfg.mode === 'multi-watch';
+      els.settingsForm.closest('.panel').hidden = !isMultiWatch;
+      els.ledger.closest('.panel').hidden = !isMultiWatch;
       fillSettingsForm(cfg);
 
       const accounts = state.accounts || [];
@@ -949,6 +966,7 @@ function html() {
       els.logList.replaceChildren();
     });
     els.settingsForm.addEventListener('input', () => {
+      if (els.settingsForm.closest('.panel').hidden) return;
       settingsDirty = true;
       els.settingsStatus.textContent = 'unsaved';
       els.settingsMessage.textContent = '';

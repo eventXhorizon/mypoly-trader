@@ -153,7 +153,7 @@ The default Compose stack runs the multi-wallet simulation dashboard and Postgre
 ```bash
 cp .env.example .env
 # Edit .env first
-docker compose up -d --build
+docker compose --profile simulation up -d --build
 docker compose logs -f multi-watch
 ```
 
@@ -180,6 +180,12 @@ To run the live copy-trading bot in Docker, start the explicit `live` profile:
 ```bash
 docker compose --profile live up -d --build live-bot
 docker compose logs -f live-bot
+```
+
+The live bot dashboard is exposed on:
+
+```text
+http://YOUR_VPS_IP:8788
 ```
 
 Only use `live-bot` after confirming `.env` has `DRY_RUN=false`, `PRIVATE_KEY`, `PROXY_WALLET_ADDRESS`, and the intended `TRADER_ADDRESS`.

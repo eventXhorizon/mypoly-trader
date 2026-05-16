@@ -13,15 +13,53 @@ import { getOpenPositions } from './services/position.js';
 import { startWsWatcher, stopWsWatcher } from './services/wsWatcher.js';
 import { getSimStats } from './utils/simStats.js';
 import { getPaperBalance } from './utils/paperBalance.js';
+import { appendWebLog, startWebDashboard, stopWebDashboard, updateWebDashboard } from './ui/webDashboard.js';
 import logger from './utils/logger.js';
 
+config.dashboardMode = 'copy-bot';
+config.dashboardTitle = 'Polymarket Copy Bot';
+config.dashboardSubtitle = config.dryRun ? 'single-wallet simulation' : 'single-wallet live trading';
+
+logger.setOutput(appendWebLog);
 logger.interceptConsole(); // strip auth headers from CLOB axios error dumps
+
+function positionAccount(balance, positions) {
+    const openCost = positions.reduce((sum, pos) => sum + (pos.totalCost || 0), 0);
+    const startBalance = config.dryRun ? config.simStartBalance : balance + openCost;
+    return [{
+        address: config.proxyWallet || 'copy-bot',
+        startBalance,
+        cash: balance,
+        totalBuys: positions.length,
+        totalSells: 0,
+        skippedBuys: 0,
+        skippedSells: 0,
+        realizedPnl: 0,
+        recentTrades: [],
+        positions,
+        openCost,
+        equity: balance + openCost,
+        totalPnl: config.dryRun ? balance + openCost - startBalance : 0,
+        updatedAt: new Date().toISOString(),
+    }];
+}
+
+async function refreshDashboard() {
+    try {
+        const balance = config.dryRun ? getPaperBalance() : await getUsdcBalance();
+        const positions = getOpenPositions();
+        await updateWebDashboard(positionAccount(balance, positions), config);
+    } catch (err) {
+        logger.warn(`Dashboard refresh failed: ${err.message}`);
+    }
+}
 
 // ── Handle a trade event from WebSocket ───────────────────────────────────────
 async function handleTrade(trade) {
     try {
         if (trade.type === 'BUY')  await executeBuy(trade);
         if (trade.type === 'SELL') await executeSell(trade);
+        await refreshDashboard();
     } catch (err) {
         logger.error(`Error processing trade ${trade.id}: ${err.message}`);
     }
@@ -92,6 +130,14 @@ async function main() {
         process.exit(1);
     }
 
+    try {
+        await startWebDashboard(config);
+        process.stdout.write(`Copy bot web dashboard: http://${config.webHost}:${config.webPort}\n`);
+    } catch (err) {
+        logger.error(`Failed to start web dashboard: ${err.message}`);
+        process.exit(1);
+    }
+
     const mode = config.dryRun ? 'SIMULATION' : 'LIVE TRADING';
     logger.info(`=== Polymarket Copy Trade [${mode}] ===`);
     logger.info(`Trader       : ${config.traderAddress}`);
@@ -124,19 +170,27 @@ async function main() {
             : 'Bot started — watching trader in real-time...',
     );
 
+    await refreshDashboard();
     startWsWatcher(handleTrade);
 
     await redeemerLoop();
+    await refreshDashboard();
     const redeemerInterval = setInterval(redeemerLoop, config.redeemInterval);
 
     // Print status every 60 seconds
-    const statusInterval = setInterval(printStatus, 60_000);
+    const statusInterval = setInterval(() => {
+        printStatus();
+        refreshDashboard();
+    }, 60_000);
+    const dashboardInterval = setInterval(refreshDashboard, 5_000);
 
     const shutdown = () => {
         logger.info('Shutting down...');
         stopWsWatcher();
+        stopWebDashboard();
         clearInterval(redeemerInterval);
         clearInterval(statusInterval);
+        clearInterval(dashboardInterval);
         setTimeout(() => process.exit(0), 300);
     };
 

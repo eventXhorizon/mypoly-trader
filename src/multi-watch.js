@@ -6,6 +6,10 @@ import { applyPaperTrade, ensureAccounts, portfolioSummary } from './services/pa
 import { closePnlLedger, initPnlLedger, recordPnlSnapshot, recordPnlTrade } from './services/pnlLedger.js';
 import { loadMultiWatchSettings, updateMultiWatchSettings } from './services/multiWatchSettings.js';
 
+config.dashboardMode = 'multi-watch';
+config.dashboardTitle = 'Polymarket Multi-Watch';
+config.dashboardSubtitle = 'multi-wallet simulation';
+
 function shortAddr(addr) {
     return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 }

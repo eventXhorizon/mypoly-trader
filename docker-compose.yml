@@ -18,6 +18,8 @@ services:
       retries: 5
 
   multi-watch:
+    profiles:
+      - simulation
     build:
       context: .
     container_name: polymarket-terminal-multi-watch
@@ -50,6 +52,11 @@ services:
     env_file:
       - path: .env
         required: false
+    environment:
+      WEB_HOST: 0.0.0.0
+      WEB_PORT: 8788
+    ports:
+      - "8788:8788"
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
