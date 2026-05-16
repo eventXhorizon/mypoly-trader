@@ -146,6 +146,46 @@ pm2 logs polymarket-bot
 
 ---
 
+## Running with Docker Compose
+
+The default Compose stack runs the multi-wallet simulation dashboard and Postgres:
+
+```bash
+cp .env.example .env
+# Edit .env first
+docker compose up -d --build
+docker compose logs -f multi-watch
+```
+
+Dashboard:
+
+```text
+http://YOUR_VPS_IP:8787
+```
+
+The default stack does not place real orders. It starts:
+
+- `postgres` for simulated PnL history
+- `multi-watch` for the Web dashboard and multi-wallet paper trading
+
+Runtime state is persisted through bind mounts:
+
+```text
+./data:/app/data
+./logs:/app/logs
+```
+
+To run the live copy-trading bot in Docker, start the explicit `live` profile:
+
+```bash
+docker compose --profile live up -d --build live-bot
+docker compose logs -f live-bot
+```
+
+Only use `live-bot` after confirming `.env` has `DRY_RUN=false`, `PRIVATE_KEY`, `PROXY_WALLET_ADDRESS`, and the intended `TRADER_ADDRESS`.
+
+---
+
 ## Project Structure
 
 ```

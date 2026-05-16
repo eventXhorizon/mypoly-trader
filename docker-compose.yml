@@ -17,5 +17,43 @@ services:
       timeout: 5s
       retries: 5
 
+  multi-watch:
+    build:
+      context: .
+    container_name: polymarket-terminal-multi-watch
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgres://polymarket:polymarket_dev_password@postgres:5432/polymarket_terminal
+      WEB_HOST: 0.0.0.0
+      WEB_PORT: 8787
+      MULTI_WATCH_REQUIRE_DB: "true"
+    ports:
+      - "8787:8787"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["npm", "run", "multi-watch"]
+
+  live-bot:
+    profiles:
+      - live
+    build:
+      context: .
+    container_name: polymarket-terminal-live-bot
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    command: ["npm", "run", "bot"]
+
 volumes:
   postgres_data:
