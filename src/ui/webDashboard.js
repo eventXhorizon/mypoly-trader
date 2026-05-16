@@ -83,6 +83,8 @@ function appendLog(rawText) {
     const text = textFromBlessedTags(rawText);
     if (!text) return;
 
+    process.stdout.write(`${text}\n`);
+
     const item = {
         id: Date.now() + Math.random(),
         at: new Date().toISOString(),
