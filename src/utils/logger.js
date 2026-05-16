@@ -34,7 +34,13 @@ function sanitizeClobMessage(raw) {
         if (jsonStart === -1) return raw;
         const parsed = JSON.parse(raw.slice(jsonStart));
         const status  = parsed.status  || '';
-        const errMsg  = parsed.data?.error || parsed.statusText || 'unknown error';
+        const data = parsed.data;
+        let errMsg = parsed.statusText || 'unknown error';
+        if (typeof data === 'string') {
+            errMsg = data;
+        } else if (data && typeof data === 'object') {
+            errMsg = data.error || data.errorMsg || data.message || JSON.stringify(data);
+        }
         const prefix  = raw.slice(0, jsonStart).trim();
         return `${prefix}: ${status} — ${errMsg}`;
     } catch {

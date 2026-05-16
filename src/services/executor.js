@@ -13,6 +13,17 @@ import logger from '../utils/logger.js';
 
 const CTF_ABI_BALANCE = ['function balanceOf(address account, uint256 id) view returns (uint256)'];
 
+function clobRejectReason(response) {
+    const raw = response?.errorMsg || response?.error || response?.message || response;
+    if (!raw) return 'unknown';
+    if (typeof raw === 'string') return raw;
+    try {
+        return JSON.stringify(raw);
+    } catch {
+        return String(raw);
+    }
+}
+
 // Per-market buy queue: prevents concurrent buys for the same market.
 // Each conditionId maps to the Promise tail of its queue so calls are
 // chained — the next buy only starts after the previous one finishes.
@@ -137,7 +148,7 @@ async function _tryGtcFallback(client, tokenId, tradeSize, price, marketOpts) {
             OrderType.GTC,
         );
         if (!resp?.success) {
-            logger.warn(`GTC fallback rejected: ${resp?.errorMsg || 'unknown'}`);
+            logger.warn(`GTC fallback rejected: ${clobRejectReason(resp)}`);
             return null;
         }
         orderId = resp.orderID;
@@ -316,7 +327,7 @@ async function _doExecuteBuy(trade, marketOpts, effectiveConditionId) {
                     logger.warn(`No liquidity — FAK filled 0 shares (attempt ${attempt})`);
                 }
             } else {
-                logger.warn(`Order rejected: ${response?.errorMsg || 'unknown'}`);
+                logger.warn(`Order rejected: ${clobRejectReason(response)}`);
             }
         } catch (err) {
             logger.error(`Buy attempt ${attempt} failed: ${err.message}`);
