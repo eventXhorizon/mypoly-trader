@@ -25,6 +25,14 @@ const config = {
   traderAddresses: (process.env.TRADER_ADDRESSES || process.env.TRADER_ADDRESS || '')
     .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
   simStartBalance: parseFloat(process.env.SIM_START_BALANCE || '100'),
+  webHost: process.env.WEB_HOST || '0.0.0.0',
+  webPort: parseInt(process.env.WEB_PORT || '8787', 10),
+  databaseUrl: process.env.DATABASE_URL || '',
+  databasePoolSize: parseInt(process.env.DATABASE_POOL_SIZE || '5', 10),
+  databaseConnectTimeoutMs: parseInt(process.env.DATABASE_CONNECT_TIMEOUT_MS || '5000', 10),
+  pnlSnapshotIntervalMs: parseInt(process.env.PNL_SNAPSHOT_INTERVAL || '60', 10) * 1000,
+  pnlHistoryLimit: parseInt(process.env.PNL_HISTORY_LIMIT || '100', 10),
+  multiWatchRequireDb: process.env.MULTI_WATCH_REQUIRE_DB !== 'false',
 
   // Trade sizing
   sizeMode: process.env.SIZE_MODE || 'percentage', // "percentage" | "balance"
@@ -197,6 +205,24 @@ export function validateMultiWatchConfig() {
   if (config.simStartBalance <= 0) throw new Error('SIM_START_BALANCE must be > 0');
   if (config.sizePercent <= 0) throw new Error('SIZE_PERCENT must be > 0');
   if (config.maxPositionSize <= 0) throw new Error('MAX_POSITION_SIZE must be > 0');
+  if (!Number.isInteger(config.webPort) || config.webPort <= 0 || config.webPort > 65535) {
+    throw new Error('WEB_PORT must be an integer between 1 and 65535');
+  }
+  if (!Number.isInteger(config.databasePoolSize) || config.databasePoolSize <= 0) {
+    throw new Error('DATABASE_POOL_SIZE must be a positive integer');
+  }
+  if (!Number.isInteger(config.databaseConnectTimeoutMs) || config.databaseConnectTimeoutMs <= 0) {
+    throw new Error('DATABASE_CONNECT_TIMEOUT_MS must be a positive integer');
+  }
+  if (!Number.isInteger(config.pnlSnapshotIntervalMs) || config.pnlSnapshotIntervalMs <= 0) {
+    throw new Error('PNL_SNAPSHOT_INTERVAL must be a positive integer number of seconds');
+  }
+  if (!Number.isInteger(config.pnlHistoryLimit) || config.pnlHistoryLimit <= 0) {
+    throw new Error('PNL_HISTORY_LIMIT must be a positive integer');
+  }
+  if (config.multiWatchRequireDb && !config.databaseUrl) {
+    throw new Error('DATABASE_URL is required for multi-watch PnL recording. Set MULTI_WATCH_REQUIRE_DB=false to run without DB.');
+  }
 }
 
 // Validation for market-maker bot

@@ -8,6 +8,8 @@
     "start": "node src/index.js",
     "dev": "nodemon --ignore 'data/*.json' src/index.js",
     "multi-watch": "LOG_ASCII=true node src/multi-watch.js",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
     "bot": "node src/bot.js",
     "bot-sim": "DRY_RUN=true node src/bot.js",
     "bot-dev": "DRY_RUN=true nodemon --ignore 'data/*.json' src/bot.js",
@@ -43,6 +45,7 @@
     "ethers": "^5.8.0",
     "global-agent": "^4.1.2",
     "https-proxy-agent": "^7.0.6",
+    "pg": "^8.20.0",
     "undici": "^7.22.0",
     "ws": "^8.19.0"
   },
