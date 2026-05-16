@@ -2,8 +2,10 @@ import http from 'http';
 import { getPnlReport } from '../services/pnlLedger.js';
 
 const MAX_LOGS = 2000;
+const MAX_JSON_BODY_BYTES = 32 * 1024;
 
 let server = null;
+let dashboardActions = {};
 let currentState = {
     accounts: [],
     config: {},
@@ -36,6 +38,32 @@ function sendHtml(res) {
 function sendEvent(res, event, data) {
     res.write(`event: ${event}\n`);
     res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+function readJsonBody(req) {
+    return new Promise((resolve, reject) => {
+        let body = '';
+        req.setEncoding('utf8');
+        req.on('data', (chunk) => {
+            body += chunk;
+            if (Buffer.byteLength(body) > MAX_JSON_BODY_BYTES) {
+                reject(new Error('Request body is too large'));
+                req.destroy();
+            }
+        });
+        req.on('end', () => {
+            if (!body.trim()) {
+                resolve({});
+                return;
+            }
+            try {
+                resolve(JSON.parse(body));
+            } catch {
+                reject(new Error('Request body must be valid JSON'));
+            }
+        });
+        req.on('error', reject);
+    });
 }
 
 function textFromBlessedTags(value) {
@@ -71,6 +99,7 @@ function appendLog(rawText) {
 
 function publicConfig(config) {
     return {
+        traderAddresses: config.traderAddresses,
         sizeMode: config.sizeMode,
         sizePercent: config.sizePercent,
         minTradeSize: config.minTradeSize,
@@ -135,28 +164,40 @@ function handleEvents(req, res) {
     req.on('close', () => clients.delete(res));
 }
 
-function requestHandler(req, res) {
+async function requestHandler(req, res) {
     try {
         const url = new URL(req.url || '/', 'http://localhost');
-        if (url.pathname === '/') {
+        const method = req.method || 'GET';
+        if (method === 'GET' && url.pathname === '/') {
             sendHtml(res);
             return;
         }
-        if (url.pathname === '/api/state') {
+        if (method === 'GET' && url.pathname === '/api/state') {
             sendJson(res, 200, { ...currentState, logs: logs.slice(-300) });
             return;
         }
-        if (url.pathname === '/events') {
+        if (method === 'GET' && url.pathname === '/events') {
             handleEvents(req, res);
+            return;
+        }
+        if (method === 'POST' && url.pathname === '/api/settings') {
+            if (!dashboardActions.onSettingsChange) {
+                sendJson(res, 503, { error: 'settings update is not available' });
+                return;
+            }
+            const body = await readJsonBody(req);
+            const settings = await dashboardActions.onSettingsChange(body);
+            sendJson(res, 200, { ok: true, settings });
             return;
         }
         sendJson(res, 404, { error: 'not found' });
     } catch (err) {
-        sendJson(res, 500, { error: err.message });
+        sendJson(res, 400, { error: err.message });
     }
 }
 
-export function startWebDashboard(config) {
+export function startWebDashboard(config, actions = {}) {
+    dashboardActions = actions;
     if (server) return Promise.resolve(server);
 
     server = http.createServer(requestHandler);
@@ -197,12 +238,30 @@ function html() {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Polymarket Multi-Watch</title>
+  <script>
+    (function initTheme() {
+      try {
+        const saved = window.localStorage.getItem('poly-dashboard-theme');
+        const system = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        document.documentElement.dataset.theme = saved || system;
+      } catch {
+        document.documentElement.dataset.theme = 'dark';
+      }
+    }());
+  </script>
   <style>
     :root {
       color-scheme: dark;
       --bg: #0f1115;
       --panel: #171a21;
       --panel-2: #1f2430;
+      --surface: #131720;
+      --log-bg: #0b0d12;
+      --button-bg: #12161f;
+      --button-hover: #566174;
+      --header-bg: rgba(15, 17, 21, 0.96);
+      --row-line: rgba(255, 255, 255, 0.05);
+      --log-line: rgba(255, 255, 255, 0.04);
       --text: #e7e9ee;
       --muted: #9ba3b4;
       --line: #2d3442;
@@ -211,6 +270,27 @@ function html() {
       --yellow: #ffd166;
       --blue: #64b5f6;
       --purple: #c084fc;
+    }
+    :root[data-theme="light"] {
+      color-scheme: light;
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --panel-2: #eef2f8;
+      --surface: #f9fbff;
+      --log-bg: #ffffff;
+      --button-bg: #ffffff;
+      --button-hover: #9aa8bc;
+      --header-bg: rgba(245, 247, 251, 0.96);
+      --row-line: rgba(30, 41, 59, 0.08);
+      --log-line: rgba(30, 41, 59, 0.08);
+      --text: #172033;
+      --muted: #607085;
+      --line: #d7dee9;
+      --green: #127c4f;
+      --red: #c33a3f;
+      --yellow: #8a6500;
+      --blue: #1267b1;
+      --purple: #7b3fbd;
     }
     * { box-sizing: border-box; }
     body {
@@ -231,7 +311,7 @@ function html() {
       gap: 16px;
       padding: 14px 18px;
       border-bottom: 1px solid var(--line);
-      background: rgba(15, 17, 21, 0.96);
+      background: var(--header-bg);
       backdrop-filter: blur(10px);
     }
     h1 {
@@ -247,6 +327,13 @@ function html() {
       gap: 8px;
       color: var(--muted);
       white-space: nowrap;
+    }
+    .header-tools {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
     }
     .dot {
       width: 8px;
@@ -321,7 +408,7 @@ function html() {
       padding: 10px;
       border: 1px solid var(--line);
       border-radius: 8px;
-      background: #131720;
+      background: var(--surface);
     }
     .addr {
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -339,7 +426,7 @@ function html() {
       padding: 10px;
       border: 1px solid var(--line);
       border-radius: 8px;
-      background: #131720;
+      background: var(--surface);
     }
     .market {
       font-weight: 650;
@@ -360,7 +447,7 @@ function html() {
       padding: 10px;
       border: 1px solid var(--line);
       border-radius: 8px;
-      background: #131720;
+      background: var(--surface);
     }
     .trade-history {
       max-height: 260px;
@@ -374,7 +461,7 @@ function html() {
       gap: 8px;
       align-items: start;
       padding: 8px 10px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      border-bottom: 1px solid var(--row-line);
     }
     .trade-row:last-child { border-bottom: 0; }
     .logs {
@@ -388,15 +475,79 @@ function html() {
       align-items: center;
       gap: 8px;
     }
+    .settings-form {
+      display: grid;
+      gap: 10px;
+    }
+    .form-row {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .form-field {
+      display: grid;
+      gap: 5px;
+    }
+    label {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--button-bg);
+      color: var(--text);
+      font: inherit;
+      letter-spacing: 0;
+    }
+    input, select {
+      height: 34px;
+      padding: 0 9px;
+    }
+    textarea {
+      min-height: 82px;
+      resize: vertical;
+      padding: 9px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: 2px solid color-mix(in srgb, var(--blue) 36%, transparent);
+      outline-offset: 1px;
+      border-color: var(--blue);
+    }
+    .form-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .form-buttons {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .form-message {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
     button {
       height: 30px;
       border: 1px solid var(--line);
       border-radius: 6px;
-      background: #12161f;
+      background: var(--button-bg);
       color: var(--text);
       cursor: pointer;
+      padding: 0 10px;
     }
-    button:hover { border-color: #566174; }
+    #themeToggle { min-width: 104px; }
+    button:hover { border-color: var(--button-hover); }
     #logList {
       flex: 1;
       overflow: auto;
@@ -404,12 +555,12 @@ function html() {
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-size: 12px;
       line-height: 1.55;
-      background: #0b0d12;
+      background: var(--log-bg);
     }
     .log-line {
       white-space: pre-wrap;
       overflow-wrap: anywhere;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      border-bottom: 1px solid var(--log-line);
       padding: 3px 0;
     }
     .level-error { color: var(--red); }
@@ -428,12 +579,15 @@ function html() {
       .wallet { grid-template-columns: 1fr 1fr; }
       .ledger-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .trade-row { grid-template-columns: 1fr; }
+      .form-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     @media (max-width: 560px) {
       header { align-items: flex-start; flex-direction: column; }
+      .header-tools { width: 100%; justify-content: space-between; }
       .metrics { grid-template-columns: 1fr; }
       .wallet { grid-template-columns: 1fr; }
       .ledger-grid { grid-template-columns: 1fr; }
+      .form-row { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -443,7 +597,10 @@ function html() {
       <h1>Polymarket Multi-Watch</h1>
       <div class="subtle">simulation dashboard</div>
     </div>
-    <div class="status"><span id="dot" class="dot"></span><span id="status">connecting</span></div>
+    <div class="header-tools">
+      <button id="themeToggle" type="button">Theme</button>
+      <div class="status"><span id="dot" class="dot"></span><span id="status">connecting</span></div>
+    </div>
   </header>
   <main>
     <section>
@@ -452,6 +609,49 @@ function html() {
         <div class="metric"><div class="label">Total PnL</div><div id="totalPnl" class="value">$0.00</div></div>
         <div class="metric"><div class="label">Cash</div><div id="totalCash" class="value">$0.00</div></div>
         <div class="metric"><div class="label">Open Cost</div><div id="openCost" class="value">$0.00</div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">
+          <span>Simulation Settings</span>
+          <span id="settingsStatus" class="small"></span>
+        </div>
+        <form id="settingsForm" class="panel-body settings-form">
+          <div class="form-field">
+            <label for="targetWallets">Target wallets</label>
+            <textarea id="targetWallets" spellcheck="false" placeholder="0x...&#10;0x..."></textarea>
+          </div>
+          <div class="form-row">
+            <div class="form-field">
+              <label for="simStartBalance">Start balance</label>
+              <input id="simStartBalance" type="number" min="0.01" step="0.01">
+            </div>
+            <div class="form-field">
+              <label for="sizeMode">Size mode</label>
+              <select id="sizeMode">
+                <option value="percentage">percentage</option>
+                <option value="balance">balance</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label for="sizePercent">Size percent</label>
+              <input id="sizePercent" type="number" min="0.01" step="0.01">
+            </div>
+            <div class="form-field">
+              <label for="maxPositionSize">Max per market</label>
+              <input id="maxPositionSize" type="number" min="0.01" step="0.01">
+            </div>
+          </div>
+          <div class="form-actions">
+            <div class="form-field">
+              <label for="minTradeSize">Min trade</label>
+              <input id="minTradeSize" type="number" min="0.01" step="0.01">
+            </div>
+            <div class="form-buttons">
+              <button id="saveSettings" type="submit">Save Settings</button>
+            </div>
+            <div id="settingsMessage" class="form-message"></div>
+          </div>
+        </form>
       </div>
       <div class="panel">
         <div class="panel-title">
@@ -495,16 +695,28 @@ function html() {
       totalCash: document.getElementById('totalCash'),
       openCost: document.getElementById('openCost'),
       settings: document.getElementById('settings'),
+      settingsForm: document.getElementById('settingsForm'),
+      settingsStatus: document.getElementById('settingsStatus'),
+      targetWallets: document.getElementById('targetWallets'),
+      simStartBalance: document.getElementById('simStartBalance'),
+      sizeMode: document.getElementById('sizeMode'),
+      sizePercent: document.getElementById('sizePercent'),
+      maxPositionSize: document.getElementById('maxPositionSize'),
+      minTradeSize: document.getElementById('minTradeSize'),
+      saveSettings: document.getElementById('saveSettings'),
+      settingsMessage: document.getElementById('settingsMessage'),
       wallets: document.getElementById('wallets'),
       positions: document.getElementById('positions'),
       updatedAt: document.getElementById('updatedAt'),
       ledger: document.getElementById('ledger'),
       ledgerStatus: document.getElementById('ledgerStatus'),
       logList: document.getElementById('logList'),
+      themeToggle: document.getElementById('themeToggle'),
       toggleScroll: document.getElementById('toggleScroll'),
       clearLogs: document.getElementById('clearLogs'),
     };
     let autoScroll = true;
+    let settingsDirty = false;
 
     function money(value, signed = false) {
       const number = Number(value || 0);
@@ -522,6 +734,82 @@ function html() {
       node.classList.toggle('red', Number(value) < 0);
     }
 
+    function currentTheme() {
+      return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+    }
+
+    function setTheme(theme) {
+      const nextTheme = theme === 'light' ? 'light' : 'dark';
+      document.documentElement.dataset.theme = nextTheme;
+      try {
+        window.localStorage.setItem('poly-dashboard-theme', nextTheme);
+      } catch { /* storage may be disabled */ }
+      els.themeToggle.textContent = 'Theme: ' + nextTheme;
+    }
+
+    function numberInputValue(value) {
+      const number = Number(value || 0);
+      return Number.isFinite(number) ? String(number) : '';
+    }
+
+    function markSettingsSaved(message) {
+      settingsDirty = false;
+      els.settingsMessage.textContent = message || 'Saved';
+      els.settingsMessage.className = 'form-message green';
+      els.settingsStatus.textContent = 'saved';
+    }
+
+    function markSettingsError(message) {
+      els.settingsMessage.textContent = message || 'Failed to save settings';
+      els.settingsMessage.className = 'form-message red';
+      els.settingsStatus.textContent = 'error';
+    }
+
+    function fillSettingsForm(cfg) {
+      if (settingsDirty) return;
+      els.targetWallets.value = (cfg.traderAddresses || []).join('\\n');
+      els.simStartBalance.value = numberInputValue(cfg.simStartBalance);
+      els.sizeMode.value = cfg.sizeMode || 'percentage';
+      els.sizePercent.value = numberInputValue(cfg.sizePercent);
+      els.maxPositionSize.value = numberInputValue(cfg.maxPositionSize);
+      els.minTradeSize.value = numberInputValue(cfg.minTradeSize);
+      els.settingsStatus.textContent = (cfg.traderAddresses || []).length + ' target(s)';
+    }
+
+    function settingsPayloadFromForm() {
+      return {
+        traderAddresses: els.targetWallets.value
+          .split(/[\\s,]+/)
+          .map((addr) => addr.trim())
+          .filter(Boolean),
+        simStartBalance: Number(els.simStartBalance.value),
+        sizeMode: els.sizeMode.value,
+        sizePercent: Number(els.sizePercent.value),
+        maxPositionSize: Number(els.maxPositionSize.value),
+        minTradeSize: Number(els.minTradeSize.value),
+      };
+    }
+
+    async function saveSettings() {
+      els.saveSettings.disabled = true;
+      els.settingsMessage.textContent = 'Saving...';
+      els.settingsMessage.className = 'form-message';
+      try {
+        const response = await fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(settingsPayloadFromForm()),
+        });
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error || 'Save failed');
+        markSettingsSaved('Settings saved. New trades use the updated config.');
+      } catch (err) {
+        markSettingsError(err.message);
+      } finally {
+        els.saveSettings.disabled = false;
+      }
+    }
+
     function renderState(state) {
       const totals = state.totals || {};
       els.totalEquity.textContent = money(totals.totalEquity);
@@ -533,6 +821,7 @@ function html() {
       const cfg = state.config || {};
       els.settings.textContent = 'Size ' + (cfg.sizeMode || '-') + ' ' + (cfg.sizePercent ?? '-') + '% | Cap ' + money(cfg.maxPositionSize);
       els.updatedAt.textContent = state.updatedAt ? new Date(state.updatedAt).toLocaleTimeString() : '';
+      fillSettingsForm(cfg);
 
       const accounts = state.accounts || [];
       if (accounts.length === 0) {
@@ -659,6 +948,20 @@ function html() {
     els.clearLogs.addEventListener('click', () => {
       els.logList.replaceChildren();
     });
+    els.settingsForm.addEventListener('input', () => {
+      settingsDirty = true;
+      els.settingsStatus.textContent = 'unsaved';
+      els.settingsMessage.textContent = '';
+      els.settingsMessage.className = 'form-message';
+    });
+    els.settingsForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      saveSettings();
+    });
+    els.themeToggle.addEventListener('click', () => {
+      setTheme(currentTheme() === 'light' ? 'dark' : 'light');
+    });
+    setTheme(currentTheme());
 
     const events = new EventSource('/events');
     events.addEventListener('open', () => {

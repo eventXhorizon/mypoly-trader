@@ -1,9 +1,10 @@
 import config, { validateMultiWatchConfig } from './config/index.js';
 import logger from './utils/logger.js';
 import { appendWebLog, startWebDashboard, stopWebDashboard, updateWebDashboard } from './ui/webDashboard.js';
-import { startMultiWsWatcher, stopMultiWsWatcher } from './services/multiWsWatcher.js';
+import { startMultiWsWatcher, stopMultiWsWatcher, updateWatchedTraders } from './services/multiWsWatcher.js';
 import { applyPaperTrade, ensureAccounts, portfolioSummary } from './services/paperPortfolio.js';
 import { closePnlLedger, initPnlLedger, recordPnlSnapshot, recordPnlTrade } from './services/pnlLedger.js';
+import { loadMultiWatchSettings, updateMultiWatchSettings } from './services/multiWatchSettings.js';
 
 function shortAddr(addr) {
     return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
@@ -11,6 +12,15 @@ function shortAddr(addr) {
 
 async function refreshDashboard() {
     await updateWebDashboard(portfolioSummary(), config);
+}
+
+async function handleSettingsChange(patch) {
+    const settings = updateMultiWatchSettings(patch, config);
+    ensureAccounts(settings.traderAddresses);
+    updateWatchedTraders(settings.traderAddresses);
+    await refreshDashboard();
+    logger.info(`Dashboard settings updated: ${settings.traderAddresses.length} target(s), ${settings.sizeMode} ${settings.sizePercent}%, cap $${settings.maxPositionSize}`);
+    return settings;
 }
 
 async function handleTrade(trade) {
@@ -31,6 +41,13 @@ async function handleTrade(trade) {
 
 async function main() {
     try {
+        loadMultiWatchSettings(config);
+    } catch (err) {
+        logger.error(`Failed to load multi-watch settings: ${err.message}`);
+        process.exit(1);
+    }
+
+    try {
         validateMultiWatchConfig();
     } catch (err) {
         logger.error(err.message);
@@ -38,7 +55,7 @@ async function main() {
     }
 
     ensureAccounts(config.traderAddresses);
-    await startWebDashboard(config);
+    await startWebDashboard(config, { onSettingsChange: handleSettingsChange });
     logger.setOutput(appendWebLog);
     logger.interceptConsole();
     process.stdout.write(`Multi-watch web dashboard: http://${config.webHost}:${config.webPort}\n`);

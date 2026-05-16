@@ -192,9 +192,6 @@ export function validateConfig() {
 
 // Validation for pure multi-wallet simulation watcher
 export function validateMultiWatchConfig() {
-  if (config.traderAddresses.length === 0) {
-    throw new Error('Missing TRADER_ADDRESSES. Set comma-separated target wallet addresses in your .env file.');
-  }
   const invalid = config.traderAddresses.filter((addr) => !/^0x[a-f0-9]{40}$/.test(addr));
   if (invalid.length > 0) {
     throw new Error(`Invalid TRADER_ADDRESSES value(s): ${invalid.join(', ')}`);

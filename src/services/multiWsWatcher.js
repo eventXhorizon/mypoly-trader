@@ -174,8 +174,13 @@ function connect() {
     });
 }
 
-export function startMultiWsWatcher(traderAddresses, onTrade) {
+export function updateWatchedTraders(traderAddresses) {
     watchedMap = new Map(traderAddresses.map((addr) => [addr.toLowerCase(), addr.toLowerCase()]));
+    logger.watch(`Watching ${watchedMap.size} trader(s): ${[...watchedMap.values()].map(shortAddr).join(', ') || 'none'}`);
+}
+
+export function startMultiWsWatcher(traderAddresses, onTrade) {
+    updateWatchedTraders(traderAddresses);
     tradeHandler = onTrade;
     isShuttingDown = false;
     reconnectDelay = INITIAL_RECONNECT_DELAY;
