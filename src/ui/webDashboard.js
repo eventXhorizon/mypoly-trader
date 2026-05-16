@@ -143,13 +143,21 @@ function summarize(accounts, config) {
     const totalCash = accounts.reduce((sum, account) => sum + account.cash, 0);
     const totalOpenCost = accounts.reduce((sum, account) => sum + account.openCost, 0);
     const totalEquity = accounts.reduce((sum, account) => sum + account.equity, 0);
+    const accountPnlValues = accounts
+        .map((account) => account.totalPnl)
+        .filter((value) => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value)));
+    const pnlAvailable = accountPnlValues.length > 0;
+    const totalPnl = pnlAvailable
+        ? accountPnlValues.reduce((sum, value) => sum + Number(value), 0)
+        : null;
 
     return {
         totalStart,
         totalCash,
         totalOpenCost,
         totalEquity,
-        totalPnl: totalEquity - totalStart,
+        totalPnl,
+        pnlAvailable,
         walletCount: accounts.length,
         openPositions: accounts.reduce((sum, account) => sum + account.positions.length, 0),
         totalBuys: accounts.reduce((sum, account) => sum + account.totalBuys, 0),
@@ -413,7 +421,7 @@ function html() {
     }
     .wallet {
       display: grid;
-      grid-template-columns: minmax(120px, 1fr) repeat(4, minmax(80px, 0.7fr));
+      grid-template-columns: minmax(220px, 1.4fr) repeat(4, minmax(82px, 0.7fr));
       gap: 10px;
       align-items: center;
       padding: 10px;
@@ -421,9 +429,13 @@ function html() {
       border-radius: 8px;
       background: var(--surface);
     }
+    .wallet > div {
+      min-width: 0;
+    }
     .addr {
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       overflow-wrap: anywhere;
+      min-width: 0;
     }
     .small { font-size: 12px; color: var(--muted); }
     .positions {
@@ -747,6 +759,10 @@ function html() {
       node.classList.toggle('red', Number(value) < 0);
     }
 
+    function hasNumericValue(value) {
+      return value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value));
+    }
+
     function currentTheme() {
       return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
     }
@@ -830,8 +846,13 @@ function html() {
       els.title.textContent = cfg.title || 'Polymarket Dashboard';
       els.subtitle.textContent = cfg.subtitle || (cfg.dryRun ? 'simulation dashboard' : 'live dashboard');
       els.totalEquity.textContent = money(totals.totalEquity);
-      els.totalPnl.textContent = money(totals.totalPnl, true);
-      setPnlClass(els.totalPnl, totals.totalPnl);
+      if (totals.pnlAvailable === false) {
+        els.totalPnl.textContent = 'N/A';
+        els.totalPnl.classList.remove('green', 'red');
+      } else {
+        els.totalPnl.textContent = money(totals.totalPnl, true);
+        setPnlClass(els.totalPnl, totals.totalPnl);
+      }
       els.totalCash.textContent = money(totals.totalCash);
       els.openCost.textContent = money(totals.totalOpenCost);
 
@@ -866,11 +887,13 @@ function html() {
     function renderWallet(account) {
       const node = document.createElement('div');
       node.className = 'wallet';
+      const hasPnl = hasNumericValue(account.totalPnl);
       const pnlClass = Number(account.totalPnl || 0) >= 0 ? 'green' : 'red';
+      const pnlText = hasPnl ? money(account.totalPnl, true) : 'N/A';
       node.innerHTML =
         '<div><div class="addr">' + escapeHtml(shortAddr(account.address)) + '</div><div class="small">' + escapeHtml(account.address) + '</div></div>' +
         '<div><div class="small">Equity</div><strong>' + money(account.equity) + '</strong></div>' +
-        '<div><div class="small">PnL</div><strong class="' + pnlClass + '">' + money(account.totalPnl, true) + '</strong></div>' +
+        '<div><div class="small">PnL</div><strong class="' + pnlClass + '">' + pnlText + '</strong></div>' +
         '<div><div class="small">Cash</div><strong>' + money(account.cash) + '</strong></div>' +
         '<div><div class="small">Open</div><strong>' + (account.positions || []).length + ' / ' + money(account.openCost) + '</strong></div>';
       return node;

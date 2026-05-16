@@ -25,7 +25,8 @@ logger.interceptConsole(); // strip auth headers from CLOB axios error dumps
 
 function positionAccount(balance, positions) {
     const openCost = positions.reduce((sum, pos) => sum + (pos.totalCost || 0), 0);
-    const startBalance = config.dryRun ? config.simStartBalance : balance + openCost;
+    const equity = balance + openCost;
+    const startBalance = config.dryRun ? config.simStartBalance : equity;
     return [{
         address: config.proxyWallet || 'copy-bot',
         startBalance,
@@ -38,8 +39,8 @@ function positionAccount(balance, positions) {
         recentTrades: [],
         positions,
         openCost,
-        equity: balance + openCost,
-        totalPnl: config.dryRun ? balance + openCost - startBalance : 0,
+        equity,
+        totalPnl: config.dryRun ? equity - startBalance : null,
         updatedAt: new Date().toISOString(),
     }];
 }
