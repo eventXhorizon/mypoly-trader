@@ -5,6 +5,7 @@ import { startMultiWsWatcher, stopMultiWsWatcher, updateWatchedTraders } from '.
 import { applyPaperTrade, ensureAccounts, portfolioSummary } from './services/paperPortfolio.js';
 import { closePnlLedger, initPnlLedger, recordPnlSnapshot, recordPnlTrade } from './services/pnlLedger.js';
 import { loadMultiWatchSettings, updateMultiWatchSettings } from './services/multiWatchSettings.js';
+import { buildCopyOpenLatencyLog } from './utils/tradeTiming.js';
 
 config.dashboardMode = 'multi-watch';
 config.dashboardTitle = 'Polymarket Multi-Watch';
@@ -29,9 +30,11 @@ async function handleSettingsChange(patch) {
 
 async function handleTrade(trade) {
     const result = applyPaperTrade(trade);
+    const ownOpenedAt = result.action === 'buy' ? new Date() : null;
     await recordPnlTrade(trade, result, logger);
     if (result.action === 'buy') {
         logger.trade(`[${shortAddr(trade.traderAddress)}] PAPER BUY $${result.cost.toFixed(2)} @ $${trade.price} | ${trade.market || trade.tokenId}`);
+        logger.info(`[${shortAddr(trade.traderAddress)}] ${buildCopyOpenLatencyLog(trade, ownOpenedAt)}`);
     } else if (result.action === 'sell') {
         const sign = result.pnl >= 0 ? '+' : '';
         logger.trade(`[${shortAddr(trade.traderAddress)}] PAPER SELL ${result.shares.toFixed(3)} sh @ $${trade.price} | ${sign}$${result.pnl.toFixed(2)}`);

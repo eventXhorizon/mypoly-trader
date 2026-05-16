@@ -8,6 +8,7 @@ import { placeAutoSell } from './autoSell.js';
 import { ensureExchangeApproval, CTF_ADDRESS } from './ctf.js';
 import { recordSimBuy } from '../utils/simStats.js';
 import { getPaperBalance, reservePaperBalance, releasePaperBalance } from '../utils/paperBalance.js';
+import { buildCopyOpenLatencyLog } from '../utils/tradeTiming.js';
 import logger from '../utils/logger.js';
 
 const CTF_ABI_BALANCE = ['function balanceOf(address account, uint256 id) view returns (uint256)'];
@@ -266,6 +267,7 @@ async function _doExecuteBuy(trade, marketOpts, effectiveConditionId) {
             });
         }
         recordSimBuy();
+        logger.info(buildCopyOpenLatencyLog(trade, new Date()));
         return;
     }
 
@@ -354,6 +356,7 @@ async function _doExecuteBuy(trade, marketOpts, effectiveConditionId) {
             totalCost: newTotalCost,
         });
         logger.success(`Position updated: ${existingPos.market} | total $${newTotalCost.toFixed(2)} / $${config.maxPositionSize}`);
+        logger.info(buildCopyOpenLatencyLog(trade, new Date()));
     } else {
         // New position
         addPosition({
@@ -365,6 +368,7 @@ async function _doExecuteBuy(trade, marketOpts, effectiveConditionId) {
             totalCost: totalCostFilled,
             outcome: trade.outcome,
         });
+        logger.info(buildCopyOpenLatencyLog(trade, new Date()));
 
         // Ensure the CTF Exchange is approved to move our ERC-1155 tokens (needed for future sells)
         try {
