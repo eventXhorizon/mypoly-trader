@@ -18,8 +18,11 @@ import { proxyFetch } from '../utils/proxy.js';
 
 export const CTF_ADDRESS = '0x4D97DCd97eC945f40cF65F87097ACe5EA0476045';
 export const USDC_ADDRESS = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174'; // USDC.e
+export const PUSD_ADDRESS = '0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB';
 export const CTF_EXCHANGE = '0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E';
 export const NEG_RISK_EXCHANGE = '0xC5d563A36AE78145C45a50134d48A1215220f80a';
+export const CTF_EXCHANGE_V2 = '0xE111180000d2663C0091e4f400237545B87B996B';
+export const NEG_RISK_EXCHANGE_V2 = '0xe2222d279d744050d28e00520010520000310F59';
 
 // ── ABIs (minimal) ────────────────────────────────────────────────────────────
 
@@ -271,11 +274,13 @@ async function ensureUsdcApproval(amountWei) {
 }
 
 /**
- * Ensure the CTF exchange is an approved ERC1155 operator (needed for limit sell orders).
+ * Ensure the CTF exchange is an approved ERC1155 operator (needed for sell orders).
  * This is a one-time per-wallet setup.
  */
-export async function ensureExchangeApproval(negRisk = false) {
-    const exchange = negRisk ? NEG_RISK_EXCHANGE : CTF_EXCHANGE;
+export async function ensureExchangeApproval(negRisk = false, version = 1) {
+    const exchange = version === 2
+        ? (negRisk ? NEG_RISK_EXCHANGE_V2 : CTF_EXCHANGE_V2)
+        : (negRisk ? NEG_RISK_EXCHANGE : CTF_EXCHANGE);
     if (_exchangeApproved.has(exchange)) return;
 
     const provider = await getPolygonProvider();
@@ -291,7 +296,7 @@ export async function ensureExchangeApproval(negRisk = false) {
     const data = iface.encodeFunctionData('setApprovalForAll', [exchange, true]);
     await execSafeCall(CTF_ADDRESS, data, 'setApprovalForAll → CTF Exchange');
     _exchangeApproved.add(exchange);
-    logger.success(`MM: CTF exchange approved as ERC1155 operator`);
+    logger.success(`CTF exchange V${version} approved as ERC1155 operator`);
 }
 
 // ── Helper: Redeem after merge ───────────────────────────────────────────────

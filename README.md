@@ -52,6 +52,7 @@ CURRENT_MARKET_MAX_ODDS=0.70 # Skip if market is more skewed than this
 Mirrors the trades of any target Polymarket wallet in real-time.
 
 - Monitors target wallet for new BUY/SELL activity via the CLOB API
+- Uses Polymarket CLOB V2 for live copy-trading orders; live funds must be available as pUSD on the configured proxy/deposit wallet
 - Replicates trades proportionally using configurable sizing modes (`balance` or `percentage`)
 - Supports automatic sell-out when target trader exits (market or limit)
 - Auto-redeems resolved positions
@@ -84,8 +85,8 @@ SNIPER_MULTIPLIERS=21:00-00:00:1.41,06:00-12:00:0.85
 
 ## Requirements
 
-- Node.js 18+
-- A Polymarket account with a funded proxy wallet (USDC.e on Polygon)
+- Node.js 20.18+ for local runs. Docker uses Node 22.
+- A Polymarket account with a funded proxy/deposit wallet. Live copy trading uses CLOB V2 pUSD balance; the maker/sniper legacy strategies still use the older USDC.e/CTF flow.
 - EOA private key for signing (the signing wallet does not need to hold funds)
 
 ---
@@ -188,7 +189,7 @@ The live bot dashboard is exposed on:
 http://YOUR_VPS_IP:8788
 ```
 
-Only use `live-bot` after confirming `.env` has `DRY_RUN=false`, `PRIVATE_KEY`, `PROXY_WALLET_ADDRESS`, and the intended `TRADER_ADDRESS`.
+Only use `live-bot` after confirming `.env` has `DRY_RUN=false`, `PRIVATE_KEY`, `PROXY_WALLET_ADDRESS`, `CLOB_SIGNATURE_TYPE`, and the intended `TRADER_ADDRESS`. Startup logs should show `CLOB client initialized (V2)` and a non-zero `pUSD Balance`.
 
 ---
 

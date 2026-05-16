@@ -1,4 +1,4 @@
-import { ClobClient } from '@polymarket/clob-client';
+import { AssetType, Chain, ClobClient, COLLATERAL_TOKEN_DECIMALS, SignatureTypeV2 } from '@polymarket/clob-client-v2';
 import { ethers, Wallet } from 'ethers';
 import config from '../config/index.js';
 import logger from '../utils/logger.js';
@@ -7,6 +7,58 @@ import { setupAxiosProxy, testProxy } from '../utils/proxy.js';
 let clobClient = null;
 let signer = null;
 let _provider = null; // singleton — reused across all onchain calls
+
+export const PUSD_ADDRESS = '0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB';
+
+function signatureTypeName(value) {
+    return SignatureTypeV2[value] || `UNKNOWN_${value}`;
+}
+
+function stringifyErrorValue(value) {
+    if (!value) return '';
+    if (typeof value === 'string') return value;
+    try {
+        return JSON.stringify(value);
+    } catch {
+        return String(value);
+    }
+}
+
+export function formatClobError(value) {
+    const status = value?.response?.status ?? value?.status;
+    const data = value?.response?.data ?? value?.data ?? value;
+    const raw = data?.errorMsg ?? data?.error ?? data?.message ??
+        value?.errorMsg ?? value?.error ?? value?.message ?? data;
+    const message = stringifyErrorValue(raw) || 'unknown';
+    return status ? `HTTP ${status}: ${message}` : message;
+}
+
+function parseCollateralBalance(value) {
+    const text = String(value || '0');
+    const balance = Number(text);
+    if (!Number.isFinite(balance)) return 0;
+    return text.includes('.') ? balance : balance / (10 ** COLLATERAL_TOKEN_DECIMALS);
+}
+
+function hasClobError(value) {
+    return Boolean(value?.error || value?.errorMsg || value?.message);
+}
+
+async function fetchCollateralBalanceAllowance() {
+    const response = await clobClient.getBalanceAllowance({ asset_type: AssetType.COLLATERAL });
+    if (hasClobError(response)) {
+        throw new Error(`CLOB collateral balance error: ${formatClobError(response)}`);
+    }
+    return response;
+}
+
+async function updateCollateralBalanceAllowance() {
+    const response = await clobClient.updateBalanceAllowance({ asset_type: AssetType.COLLATERAL });
+    if (hasClobError(response)) {
+        throw new Error(`CLOB collateral allowance update error: ${formatClobError(response)}`);
+    }
+    return response;
+}
 
 /**
  * Initialize the Polymarket CLOB client
@@ -39,23 +91,48 @@ export async function initClient() {
         };
         logger.info('Using API credentials from .env');
     } else {
-        const tempClient = new ClobClient(config.clobHost, config.chainId, signer);
+        const tempClient = new ClobClient({
+            host: config.clobHost,
+            chain: Chain.POLYGON,
+            signer,
+            useServerTime: true,
+            retryOnError: true,
+        });
         apiCreds = await tempClient.createOrDeriveApiKey();
+        if (!apiCreds?.key) {
+            throw new Error(`Failed to derive API credentials: ${formatClobError(apiCreds) || 'empty response'}`);
+        }
         logger.info('API credentials derived successfully');
     }
 
-    // Step 2: Initialize full trading client
-    // proxyWallet = funder address (where USDC.e is held)
-    clobClient = new ClobClient(
-        config.clobHost,
-        config.chainId,
-        signer,
-        apiCreds,
-        2, // Signature type: 2 = POLY_PROXY (EOA signs on behalf of proxy wallet)
-        config.proxyWallet, // Funder = proxy wallet (deposit USDC.e here)
-    );
+    const signatureType = config.clobSignatureType;
+    logger.info(`CLOB signature type: ${signatureType} (${signatureTypeName(signatureType)})`);
 
-    logger.success('CLOB client initialized');
+    // Step 2: Initialize full trading client.
+    // In CLOB V2, funderAddress is the Polymarket proxy/deposit wallet.
+    clobClient = new ClobClient({
+        host: config.clobHost,
+        chain: Chain.POLYGON,
+        signer,
+        creds: apiCreds,
+        signatureType,
+        funderAddress: config.proxyWallet,
+        useServerTime: true,
+        retryOnError: true,
+    });
+
+    const version = await clobClient.getVersion();
+    logger.success(`CLOB client initialized (V${version})`);
+
+    if (!config.dryRun) {
+        try {
+            await updateCollateralBalanceAllowance();
+            logger.info('CLOB collateral allowance refreshed');
+        } catch (err) {
+            logger.warn(`Could not refresh CLOB collateral allowance: ${err.message}`);
+        }
+    }
+
     return clobClient;
 }
 
@@ -92,13 +169,18 @@ export function getPolygonProvider() {
 }
 
 /**
- * Get USDC.e balance of the proxy wallet on Polygon
+ * Get CLOB V2 collateral balance (pUSD) for trading.
+ * The exported name is kept for compatibility with existing callers.
  */
 export async function getUsdcBalance() {
+    if (clobClient) {
+        const response = await fetchCollateralBalanceAllowance();
+        return parseCollateralBalance(response?.balance);
+    }
+
     const provider = getPolygonProvider();
-    const usdcAddress = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174'; // USDC.e on Polygon
     const abi = ['function balanceOf(address) view returns (uint256)'];
-    const usdc = new ethers.Contract(usdcAddress, abi, provider);
-    const balance = await usdc.balanceOf(config.proxyWallet);
+    const pusd = new ethers.Contract(PUSD_ADDRESS, abi, provider);
+    const balance = await pusd.balanceOf(config.proxyWallet);
     return parseFloat(ethers.utils.formatUnits(balance, 6));
 }

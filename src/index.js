@@ -41,7 +41,7 @@ async function buildStatusContent() {
         const balance = config.dryRun ? getPaperBalance() : await getUsdcBalance();
         const balColor = balance > 0 ? 'green-fg' : 'gray-fg';
         const label = config.dryRun ? 'Paper Balance' : 'Balance';
-        const suffix = config.dryRun ? ' SIM' : ' USDC.e';
+        const suffix = config.dryRun ? ' SIM' : ' pUSD';
         lines.push(` {yellow-fg}💵 ${label}:{/yellow-fg} {bold}{${balColor}}$${balance.toFixed(2)}${suffix}{/${balColor}}{/bold}`);
     } catch {
         lines.push(` {yellow-fg}💵 Balance:{/yellow-fg} {gray-fg}N/A{/gray-fg}`);
@@ -193,7 +193,7 @@ async function main() {
     // Initial balance display
     try {
         const balance = config.dryRun ? getPaperBalance() : await getUsdcBalance();
-        logger.money(`${config.dryRun ? 'Paper balance' : 'USDC.e Balance'}: $${balance.toFixed(2)}`);
+        logger.money(`${config.dryRun ? 'Paper balance' : 'pUSD Balance'}: $${balance.toFixed(2)}`);
     } catch (err) {
         logger.warn('Could not fetch balance:', err.message);
     }

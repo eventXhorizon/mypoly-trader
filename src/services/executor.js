@@ -1,7 +1,7 @@
-import { Side, OrderType } from '@polymarket/clob-client';
+import { Side, OrderType } from '@polymarket/clob-client-v2';
 import { ethers } from 'ethers';
 import config from '../config/index.js';
-import { getClient, getUsdcBalance, getPolygonProvider } from './client.js';
+import { formatClobError, getClient, getUsdcBalance, getPolygonProvider } from './client.js';
 import { hasPosition, addPosition, getPosition, updatePosition, removePosition } from './position.js';
 import { fetchMarketByTokenId } from './watcher.js';
 import { placeAutoSell } from './autoSell.js';
@@ -14,14 +14,18 @@ import logger from '../utils/logger.js';
 const CTF_ABI_BALANCE = ['function balanceOf(address account, uint256 id) view returns (uint256)'];
 
 function clobRejectReason(response) {
-    const raw = response?.errorMsg || response?.error || response?.message || response;
-    if (!raw) return 'unknown';
-    if (typeof raw === 'string') return raw;
-    try {
-        return JSON.stringify(raw);
-    } catch {
-        return String(raw);
-    }
+    return formatClobError(response);
+}
+
+function parseOrderFill(response) {
+    const takingAmount = parseFloat(response?.takingAmount || '0');
+    const makingAmount = parseFloat(response?.makingAmount || '0');
+    return {
+        buyShares: takingAmount,
+        buyCost: makingAmount,
+        sellShares: makingAmount,
+        sellProceeds: takingAmount,
+    };
 }
 
 // Per-market buy queue: prevents concurrent buys for the same market.
@@ -304,6 +308,8 @@ async function _doExecuteBuy(trade, marketOpts, effectiveConditionId) {
                     side: Side.BUY,
                     amount: remainingAmount,
                     price: Math.min(price * 1.02, 0.99), // 2% slippage, max 0.99
+                    orderType: OrderType.FAK,
+                    userUSDCBalance: Math.max(balance - totalCostFilled, 0),
                 },
                 {
                     tickSize: marketOpts.tickSize,
@@ -313,8 +319,7 @@ async function _doExecuteBuy(trade, marketOpts, effectiveConditionId) {
             );
 
             if (response && response.success) {
-                const sharesFilled = parseFloat(response.takingAmount || '0');
-                const costFilled   = parseFloat(response.makingAmount || '0');
+                const { buyShares: sharesFilled, buyCost: costFilled } = parseOrderFill(response);
 
                 if (sharesFilled > 0) {
                     logger.success(`Order filled: ${response.orderID} | ${sharesFilled.toFixed(4)} shares @ ~$${(costFilled / sharesFilled).toFixed(4)}`);
@@ -383,7 +388,7 @@ async function _doExecuteBuy(trade, marketOpts, effectiveConditionId) {
 
         // Ensure the CTF Exchange is approved to move our ERC-1155 tokens (needed for future sells)
         try {
-            await ensureExchangeApproval(marketOpts.negRisk);
+            await ensureExchangeApproval(marketOpts.negRisk, 2);
         } catch (err) {
             logger.warn(`Could not verify ERC-1155 approval: ${err.message}`);
         }
@@ -467,7 +472,7 @@ export async function executeSell(trade) {
 
     // Ensure ERC-1155 approval so the exchange can transfer our tokens
     try {
-        await ensureExchangeApproval(marketOpts.negRisk);
+        await ensureExchangeApproval(marketOpts.negRisk, 2);
     } catch (err) {
         logger.warn(`Could not verify ERC-1155 approval: ${err.message}`);
     }
@@ -504,6 +509,7 @@ export async function executeSell(trade) {
                         side: Side.SELL,
                         amount: sharesToSell,
                         price: Math.max(price * 0.98, 0.01), // 2% slippage, min 0.01
+                        orderType: OrderType.FAK,
                     },
                     {
                         tickSize: marketOpts.tickSize,
@@ -513,7 +519,7 @@ export async function executeSell(trade) {
                 );
 
                 if (response && response.success) {
-                    const sharesFilled = parseFloat(response.takingAmount || '0');
+                    const { sellShares: sharesFilled } = parseOrderFill(response);
                     if (sharesFilled > 0) {
                         logger.success(`Sell filled: ${response.orderID} | ${sharesFilled.toFixed(4)} shares`);
                         filled = true;
@@ -522,7 +528,7 @@ export async function executeSell(trade) {
                         logger.warn(`No bid liquidity — FAK filled 0 shares (attempt ${attempt})`);
                     }
                 } else {
-                    logger.warn(`Sell rejected: ${response?.errorMsg || 'unknown'}`);
+                    logger.warn(`Sell rejected: ${clobRejectReason(response)}`);
                 }
             } else {
                 // Limit sell at trader's sell price
@@ -547,7 +553,7 @@ export async function executeSell(trade) {
                     filled = true;
                     break;
                 } else {
-                    logger.warn(`Limit sell failed: ${response?.errorMsg || 'Unknown'}`);
+                    logger.warn(`Limit sell failed: ${clobRejectReason(response)}`);
                 }
             }
         } catch (err) {

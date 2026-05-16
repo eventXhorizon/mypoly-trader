@@ -4,12 +4,13 @@ dotenv.config();
 const config = {
   // Wallet
   privateKey: process.env.PRIVATE_KEY,         // EOA private key (for signing only)
-  proxyWallet: process.env.PROXY_WALLET_ADDRESS, // Polymarket proxy wallet (deposit USDC here)
+  proxyWallet: process.env.PROXY_WALLET_ADDRESS, // Polymarket proxy/deposit wallet (CLOB V2 uses pUSD)
 
   // Polymarket API (optional, auto-derived if empty)
   clobApiKey: process.env.CLOB_API_KEY || '',
   clobApiSecret: process.env.CLOB_API_SECRET || '',
   clobApiPassphrase: process.env.CLOB_API_PASSPHRASE || '',
+  clobSignatureType: parseInt(process.env.CLOB_SIGNATURE_TYPE || '2', 10),
 
   // Polymarket endpoints
   clobHost: 'https://clob.polymarket.com',
@@ -187,6 +188,9 @@ export function validateConfig() {
   }
   if (!['market', 'limit'].includes(config.sellMode)) {
     throw new Error(`Invalid SELL_MODE: ${config.sellMode}. Use "market" or "limit".`);
+  }
+  if (![0, 1, 2, 3].includes(config.clobSignatureType)) {
+    throw new Error('Invalid CLOB_SIGNATURE_TYPE. Use 0, 1, 2, or 3.');
   }
 }
 

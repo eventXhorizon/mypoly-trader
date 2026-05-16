@@ -45,6 +45,7 @@
   "license": "ISC",
   "dependencies": {
     "@polymarket/clob-client": "^4.7.3",
+    "@polymarket/clob-client-v2": "^1.0.6",
     "blessed": "^0.1.81",
     "dotenv": "^16.4.7",
     "ethers": "^5.8.0",
@@ -52,6 +53,7 @@
     "https-proxy-agent": "^7.0.6",
     "pg": "^8.20.0",
     "undici": "^7.22.0",
+    "viem": "^2.49.3",
     "ws": "^8.19.0"
   },
   "devDependencies": {

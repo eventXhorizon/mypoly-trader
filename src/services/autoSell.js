@@ -1,6 +1,6 @@
-import { Side, OrderType } from '@polymarket/clob-client';
+import { Side, OrderType } from '@polymarket/clob-client-v2';
 import config from '../config/index.js';
-import { getClient } from './client.js';
+import { formatClobError, getClient } from './client.js';
 import { updatePosition } from './position.js';
 import logger from '../utils/logger.js';
 
@@ -55,7 +55,7 @@ export async function placeAutoSell(conditionId, tokenId, shares, avgBuyPrice, m
             logger.success(`Auto-sell order placed: ${response.orderID} @ $${sellPrice}`);
             updatePosition(conditionId, { sellOrderId: response.orderID });
         } else {
-            logger.warn(`Auto-sell failed: ${response?.errorMsg || 'Unknown'}`);
+            logger.warn(`Auto-sell failed: ${formatClobError(response)}`);
         }
     } catch (err) {
         logger.error('Failed to place auto-sell:', err.message);

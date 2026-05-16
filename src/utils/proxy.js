@@ -2,7 +2,7 @@
  * proxy.js
  * Proxy support for Polymarket API calls only.
  *
- * - CLOB API: uses axios internally (via @polymarket/clob-client) →
+ * - CLOB API: uses axios internally (via @polymarket/clob-client / clob-client-v2) →
  *   we set axios.defaults.httpAgent/httpsAgent via https-proxy-agent.
  * - Gamma / Data API: uses native fetch (undici) →
  *   we use undici.ProxyAgent with the `dispatcher` option.
@@ -19,7 +19,7 @@ let axiosAgent = null;   // https-proxy-agent for axios (CLOB client)
 let fetchDispatcher = null; // undici ProxyAgent for native fetch
 
 /**
- * Set up axios defaults so that the @polymarket/clob-client's
+ * Set up axios defaults so that the Polymarket CLOB client's
  * internal axios calls go through the proxy.
  * Call this BEFORE creating ClobClient.
  */

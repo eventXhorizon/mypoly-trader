@@ -1,7 +1,7 @@
 import { ethers } from 'ethers';
 import config from '../config/index.js';
 import { getPolygonProvider } from './client.js';
-import { execSafeCall, CTF_ADDRESS, USDC_ADDRESS } from './ctf.js';
+import { execSafeCall, CTF_ADDRESS, PUSD_ADDRESS } from './ctf.js';
 import { getOpenPositions, removePosition } from './position.js';
 import { recordSimResult } from '../utils/simStats.js';
 import { releasePaperBalance } from '../utils/paperBalance.js';
@@ -75,7 +75,7 @@ async function redeemPosition(conditionId) {
     try {
         const ctfIface = new ethers.utils.Interface(CTF_ABI);
         const data = ctfIface.encodeFunctionData('redeemPositions', [
-            USDC_ADDRESS,
+            PUSD_ADDRESS,
             ethers.constants.HashZero,
             conditionId,
             [1, 2],
@@ -170,7 +170,7 @@ export async function checkAndRedeemPositions() {
                 const success = await redeemPosition(position.conditionId);
                 if (success) {
                     removePosition(position.conditionId);
-                    logger.money(`Redeemed: ${position.market} → USDC recovered`);
+                    logger.money(`Redeemed: ${position.market} → pUSD recovered`);
                 } else {
                     logger.warn(`Redeem failed for ${position.market}, will retry next interval — continuing to next position...`);
                 }

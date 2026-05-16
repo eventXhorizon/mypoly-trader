@@ -160,7 +160,7 @@ async function main() {
 
     try {
         const balance = config.dryRun ? getPaperBalance() : await getUsdcBalance();
-        logger.money(`${config.dryRun ? 'Paper balance' : 'USDC.e Balance'}: $${balance.toFixed(2)}`);
+        logger.money(`${config.dryRun ? 'Paper balance' : 'pUSD Balance'}: $${balance.toFixed(2)}`);
     } catch (err) {
         logger.warn('Could not fetch balance:', err.message);
     }
