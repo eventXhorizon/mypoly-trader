@@ -54,6 +54,7 @@ services:
       - path: .env
         required: false
     environment:
+      DATABASE_URL: postgres://polymarket:polymarket_dev_password@postgres:5432/polymarket_terminal
       WEB_HOST: 0.0.0.0
       WEB_PORT: 8788
       MULTI_WATCH_DASHBOARD_URL: ""
@@ -62,6 +63,9 @@ services:
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
     command: ["npm", "run", "bot"]
 
 volumes:

@@ -155,6 +155,14 @@ http://你的VPS_IP:8787
 docker compose --profile live up -d --build live-bot
 ```
 
+`live-bot` 会通过 compose 内部地址连接 Postgres：
+
+```text
+postgres://polymarket:polymarket_dev_password@postgres:5432/polymarket_terminal
+```
+
+VPS Docker 模式下，`.env` 里的 `127.0.0.1:15432` 只适合宿主机命令使用；容器内访问数据库必须使用 `postgres:5432`。
+
 查看实盘 bot 日志：
 
 ```bash

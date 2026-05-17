@@ -553,15 +553,17 @@ http://你的VPS_IP:8788
 DATABASE_URL=postgres://polymarket:polymarket_dev_password@127.0.0.1:15432/polymarket_terminal
 ```
 
-这个主要给 `npm run multi-watch` 的模拟盈亏记录使用。
+这个主要给宿主机直接运行的 `npm run multi-watch`、`npm run wallet-score` 或 `npm run bot` 使用。
 
-Docker 运行 `multi-watch` 时，compose 会自动覆盖为容器内地址：
+Docker 运行 `multi-watch` 或 `live-bot` 时，compose 会自动覆盖为容器内地址：
 
 ```text
 postgres://polymarket:polymarket_dev_password@postgres:5432/polymarket_terminal
 ```
 
-实盘 `npm run bot` 当前主要显示实时状态和日志，不依赖 Postgres 记录历史盈亏。
+原因是容器里的 `127.0.0.1` 指向容器自身，不是 compose 里的 `postgres` 服务。VPS Docker 模式不要把 live-bot 容器连到 `127.0.0.1:15432`。
+
+实盘 `live-bot` 的 Targets 页签会用 Postgres 只读展示钱包分析和纸面跟单盈亏；数据库不可用时实盘交易仍会继续运行，只是 Targets 数据不可用。
 
 ## 推荐配置模板
 

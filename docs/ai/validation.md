@@ -165,3 +165,24 @@ Known unverified:
 - Browser visual rendering of the new tab has not been screenshot-tested yet.
 - Live-bot runtime smoke test was not run because that entry point requires real wallet credentials in `.env`.
 - The smoke test used the existing multi-watch runtime, so it wrote local `portfolio_snapshots` as designed.
+
+## 2026-05-17 Docker Live-Bot Postgres Wiring
+
+Changed:
+
+- Docker `live-bot` now overrides `DATABASE_URL` to `postgres://polymarket:polymarket_dev_password@postgres:5432/polymarket_terminal`.
+- Docker `live-bot` now waits for the compose `postgres` health check before starting.
+- Updated Chinese docs to explain that `.env` `127.0.0.1:15432` is for host commands, while Docker containers must use `postgres:5432`.
+- Downgraded optional read-only wallet analytics connection failure from error to warning.
+
+Validation performed:
+
+- `docker compose config`
+- `docker compose --profile live config`
+- `docker compose --profile live config --services`
+- `node --check src/services/walletAnalyticsDb.js`
+- `node --check src/bot.js`
+
+Known unverified:
+
+- Did not restart VPS Docker services from this local session.

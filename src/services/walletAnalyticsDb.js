@@ -41,7 +41,7 @@ export async function initWalletAnalyticsReadOnlyDb(logger = console) {
         initialized = true;
         enabled = false;
         await closeWalletAnalyticsDb();
-        logger.error?.(`Wallet analytics read-only dashboard disabled: ${err.message}`);
+        logger.warn?.(`Wallet analytics read-only dashboard disabled: ${err.message}`);
         return false;
     }
 }
