@@ -120,3 +120,23 @@ Known unverified:
 
 - Browser visual rendering was not checked with a screenshot.
 - A real scored wallet with non-empty CLV/liquidity metrics still needs to be tested.
+
+## 2026-05-17 Dashboard Cross Links
+
+Changed:
+
+- Added `MULTI_WATCH_DASHBOARD_URL` and `LIVE_DASHBOARD_URL` config.
+- Added a header navigation link in the shared Web dashboard.
+- Live/copy-bot mode links to multi-watch.
+- Multi-watch mode links to live-bot.
+
+Validation performed:
+
+- `node --check src/config/index.js`
+- `node --check src/ui/webDashboard.js`
+- Temporary smoke test: `WEB_PORT=8877 MULTI_WATCH_REQUIRE_DB=false DATABASE_URL=... TRADER_ADDRESSES=0x1111111111111111111111111111111111111111 LIVE_DASHBOARD_URL=http://127.0.0.1:8788 npm run multi-watch`
+- Queried `http://127.0.0.1:8877/api/state` and confirmed `config.liveDashboardUrl` was present.
+
+Known unverified:
+
+- Browser visual rendering of the header link was not screenshot-tested.

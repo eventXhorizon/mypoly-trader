@@ -117,6 +117,8 @@ function publicConfig(config) {
         simStartBalance: config.simStartBalance,
         webHost: config.webHost,
         webPort: config.webPort,
+        multiWatchDashboardUrl: config.multiWatchDashboardUrl,
+        liveDashboardUrl: config.liveDashboardUrl,
         pnlHistoryLimit: config.pnlHistoryLimit,
         pnlSnapshotIntervalMs: config.pnlSnapshotIntervalMs,
     };
@@ -360,6 +362,20 @@ function html() {
       flex-wrap: wrap;
       justify-content: flex-end;
     }
+    .nav-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 30px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--button-bg);
+      color: var(--text);
+      text-decoration: none;
+      padding: 0 10px;
+      white-space: nowrap;
+    }
+    .nav-link:hover { border-color: var(--button-hover); }
     .dot {
       width: 8px;
       height: 8px;
@@ -662,6 +678,7 @@ function html() {
       <div id="subtitle" class="subtle">simulation dashboard</div>
     </div>
     <div class="header-tools">
+      <a id="dashboardNav" class="nav-link" href="#" target="_blank" rel="noopener">Multi-Watch</a>
       <button id="themeToggle" type="button">Theme</button>
       <div class="status"><span id="dot" class="dot"></span><span id="status">connecting</span></div>
     </div>
@@ -792,6 +809,7 @@ function html() {
       analyticsStatus: document.getElementById('analyticsStatus'),
       logList: document.getElementById('logList'),
       themeToggle: document.getElementById('themeToggle'),
+      dashboardNav: document.getElementById('dashboardNav'),
       toggleScroll: document.getElementById('toggleScroll'),
       clearLogs: document.getElementById('clearLogs'),
     };
@@ -924,6 +942,7 @@ function html() {
       els.settings.textContent = 'Size ' + (cfg.sizeMode || '-') + ' ' + (cfg.sizePercent ?? '-') + '% | Cap ' + money(cfg.maxPositionSize);
       els.updatedAt.textContent = state.updatedAt ? new Date(state.updatedAt).toLocaleTimeString() : '';
       const isMultiWatch = cfg.mode === 'multi-watch';
+      configureDashboardNav(cfg, isMultiWatch);
       els.settingsForm.closest('.panel').hidden = !isMultiWatch;
       els.ledger.closest('.panel').hidden = !isMultiWatch;
       els.analyticsPanel.hidden = !isMultiWatch;
@@ -958,6 +977,25 @@ function html() {
       }
       renderLedger(state.pnl || {});
       renderAnalytics(state.analytics || {}, accounts);
+    }
+
+    function sameHostUrl(port) {
+      const url = new URL(window.location.href);
+      url.port = String(port);
+      url.pathname = '/';
+      url.search = '';
+      url.hash = '';
+      return url.toString();
+    }
+
+    function configureDashboardNav(cfg, isMultiWatch) {
+      if (isMultiWatch) {
+        els.dashboardNav.textContent = 'Live Bot';
+        els.dashboardNav.href = cfg.liveDashboardUrl || sameHostUrl(8788);
+        return;
+      }
+      els.dashboardNav.textContent = 'Multi-Watch';
+      els.dashboardNav.href = cfg.multiWatchDashboardUrl || sameHostUrl(8787);
     }
 
     function renderWallet(account) {

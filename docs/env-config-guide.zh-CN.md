@@ -58,6 +58,24 @@ WALLET_ANALYTICS_ORDERBOOK_LIMIT=40
 
 注意：当前评分是 `stage1b`。CLV 使用 CLOB 历史价格估算，滑点使用当前 orderbook 估算，因此仍然只是候选筛选，不等于实盘跟单结论。输出里的 `eligible=true` 只表示可以进入 4-8 周 paper follow，不表示可以直接实盘跟单。
 
+## Dashboard 跳转配置
+
+live dashboard 和 multi-watch dashboard 顶部会互相显示跳转入口。默认会按当前浏览器 host 推断端口：
+
+```text
+multi-watch: 8787
+live-bot   : 8788
+```
+
+如果你使用反向代理、自定义域名或不同端口，可以显式配置：
+
+```env
+MULTI_WATCH_DASHBOARD_URL=https://你的域名/multi-watch
+LIVE_DASHBOARD_URL=https://你的域名/live
+```
+
+这只是页面链接，不会让 live 页面读取 multi-watch 数据，也不会让 multi-watch 触发实盘下单。
+
 ## 实盘跟单最小配置
 
 如果你要实盘跟单，例如总资金约 20U，每单跟 2U，可以这样配置：

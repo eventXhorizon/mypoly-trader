@@ -70,6 +70,8 @@ const config = {
   simStartBalance: parseFloat(process.env.SIM_START_BALANCE || '100'),
   webHost: process.env.WEB_HOST || '0.0.0.0',
   webPort: parseInt(process.env.WEB_PORT || '8787', 10),
+  multiWatchDashboardUrl: process.env.MULTI_WATCH_DASHBOARD_URL || '',
+  liveDashboardUrl: process.env.LIVE_DASHBOARD_URL || '',
   statusPositionsVerbose: process.env.STATUS_POSITIONS_VERBOSE === 'true',
   databaseUrl: process.env.DATABASE_URL || '',
   databasePoolSize: parseInt(process.env.DATABASE_POOL_SIZE || '5', 10),

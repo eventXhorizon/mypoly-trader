@@ -32,6 +32,7 @@ Implementation status:
 - `eligible=true` means only "ready for 4-8 week paper follow", not "ready for live copy".
 - The Web dashboard now includes a `Wallet Analytics` panel only when `config.dashboardMode === 'multi-watch'`.
 - The live copy-bot dashboard does not query or display wallet analytics.
+- Dashboard headers now include cross-links: live dashboard links to multi-watch, and multi-watch links to live.
 - A multi-watch shutdown edge case was fixed by swallowing WebSocket errors after listeners are removed during cleanup.
 
 Recommended next implementation step:

@@ -193,6 +193,34 @@ MIN_TRADE_SIZE=1
 
 注意：`live-bot` 的 Web dashboard 只显示单钱包实盘/模拟状态、仓位和日志，不提供多钱包模拟配置表单。多钱包配置表单只属于 `multi-watch` 模拟模式。
 
+## Dashboard 页面跳转
+
+当前 Web dashboard 支持跨页面入口：
+
+- `live-bot` 页面顶部会显示 `Multi-Watch` 链接。
+- `multi-watch` 页面顶部会显示 `Live Bot` 链接。
+
+这只是浏览器导航链接，不会把两个服务的数据流混在一起：
+
+- live 页面仍然只显示实盘 bot 状态、仓位和日志。
+- multi-watch 页面仍然只显示多钱包模拟、目标钱包 paper PnL 和 wallet analytics。
+- live 页面不会读取 multi-watch 的分析表。
+- multi-watch 页面不会触发 live 下单。
+
+Docker 默认端口：
+
+```text
+multi-watch: http://你的VPS_IP:8787
+live-bot   : http://你的VPS_IP:8788
+```
+
+如果你用了反向代理或自定义域名，可以在 `.env` 中显式设置：
+
+```env
+MULTI_WATCH_DASHBOARD_URL=https://你的域名/multi-watch
+LIVE_DASHBOARD_URL=https://你的域名/live
+```
+
 ## Dashboard 配置项说明
 
 `npm run multi-watch` 启动后，可以在 Web dashboard 的 `Simulation Settings` 区域直接修改目标钱包和模拟跟单金额。保存后会立即影响后续新交易，并持久化到：
