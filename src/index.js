@@ -176,7 +176,7 @@ async function main() {
     logger.info(`Proxy wallet    : ${config.proxyWallet}`);
     logger.info(`Size mode       : ${config.sizeMode} (${config.sizePercent}%)`);
     logger.info(`Min trade       : $${config.minTradeSize}`);
-    logger.info(`Max position    : $${config.maxPositionSize} per market`);
+    logger.info(`Max position    : $${config.maxPositionSize} per outcome`);
     logger.info(`Auto sell       : ${config.autoSellEnabled ? `ON (${config.autoSellProfitPercent}%)` : 'OFF'}`);
     logger.info(`Sell mode       : ${config.sellMode}`);
     logger.info(`Mode            : ${config.dryRun ? 'SIMULATION (DRY RUN)' : 'LIVE TRADING'}`);

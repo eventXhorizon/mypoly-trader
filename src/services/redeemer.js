@@ -130,7 +130,7 @@ async function simulateRedeem(position) {
         recordSimResult(position, 'LOSS', pnl, returned);
     }
 
-    removePosition(position.conditionId);
+    removePosition(position);
     return true;
 }
 
@@ -169,7 +169,7 @@ export async function checkAndRedeemPositions() {
             } else {
                 const success = await redeemPosition(position.conditionId);
                 if (success) {
-                    removePosition(position.conditionId);
+                    removePosition(position);
                     logger.money(`Redeemed: ${position.market} → pUSD recovered`);
                 } else {
                     logger.warn(`Redeem failed for ${position.market}, will retry next interval — continuing to next position...`);

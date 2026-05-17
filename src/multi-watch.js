@@ -38,7 +38,7 @@ async function handleTrade(trade) {
     } else if (result.action === 'sell') {
         const sign = result.pnl >= 0 ? '+' : '';
         logger.trade(`[${shortAddr(trade.traderAddress)}] PAPER SELL ${result.shares.toFixed(3)} sh @ $${trade.price} | ${sign}$${result.pnl.toFixed(2)}`);
-    } else if (result.reason === 'below minimum' || result.reason === 'market cap reached') {
+    } else if (result.reason === 'below minimum' || result.reason === 'outcome cap reached') {
         // Expected simulation skips are stored in Recent; avoid flooding the live log.
     } else {
         logger.warn(`[${shortAddr(trade.traderAddress)}] skipped ${trade.type}: ${result.reason}`);
@@ -80,7 +80,7 @@ async function main() {
     logger.info(`Start balance  : $${config.simStartBalance} per wallet`);
     logger.info(`Size mode      : ${config.sizeMode} (${config.sizePercent}%)`);
     logger.info(`Min trade      : $${config.minTradeSize}`);
-    logger.info(`Max position   : $${config.maxPositionSize} per market`);
+    logger.info(`Max position   : $${config.maxPositionSize} per outcome`);
     logger.info('No private key, no proxy wallet, no real orders.');
     logger.info(`Web dashboard  : http://${config.webHost}:${config.webPort}`);
     logger.info('===============================================');

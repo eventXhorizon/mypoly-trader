@@ -2,7 +2,7 @@ import { Side, OrderType } from '@polymarket/clob-client-v2';
 import { ethers } from 'ethers';
 import config from '../config/index.js';
 import { formatClobError, getClient, getUsdcBalance, getPolygonProvider } from './client.js';
-import { hasPosition, addPosition, getPosition, updatePosition, removePosition } from './position.js';
+import { addPosition, getPosition, positionKeyFor, updatePosition, removePosition } from './position.js';
 import { fetchMarketByTokenId } from './watcher.js';
 import { placeAutoSell } from './autoSell.js';
 import { ensureExchangeApproval, CTF_ADDRESS } from './ctf.js';
@@ -28,9 +28,8 @@ function parseOrderFill(response) {
     };
 }
 
-// Per-market buy queue: prevents concurrent buys for the same market.
-// Each conditionId maps to the Promise tail of its queue so calls are
-// chained — the next buy only starts after the previous one finishes.
+// Per-outcome buy queue: prevents concurrent buys for the same token.
+// Each position key maps to the Promise tail of its queue so calls are chained.
 const _buyQueue = new Map();
 
 /**
@@ -55,7 +54,7 @@ async function getOnChainTokenBalance(tokenId) {
  * Limit orders can be filled in many small chunks; using the event's fill size
  * would give inconsistent (often sub-minimum) results.
  *
- * SIZE_MODE=percentage → SIZE_PERCENT% of MAX_POSITION_SIZE per market
+ * SIZE_MODE=percentage → SIZE_PERCENT% of MAX_POSITION_SIZE per outcome token
  * SIZE_MODE=balance    → SIZE_PERCENT% of current balance
  */
 async function calculateTradeSize() {
@@ -104,28 +103,28 @@ async function getMarketOptions(tokenId) {
 
 /**
  * Execute a BUY trade (copy trader's buy).
- * Calls are serialized per market — concurrent events for the same market
- * are queued and processed one at a time to prevent duplicate positions.
+ * Calls are serialized per outcome token to prevent duplicate positions.
  */
 export function executeBuy(trade) {
     const { tokenId, conditionId } = trade;
 
-    // Resolve conditionId to use as queue key.
+    // Resolve conditionId for state metadata, but cap/queue by tokenId when available.
     // getMarketOptions is a read-only fetch — safe to run outside the queue.
     const queued = getMarketOptions(tokenId).then((marketOpts) => {
         const effectiveConditionId = conditionId || marketOpts.conditionId;
+        const positionKey = positionKeyFor({ tokenId, conditionId: effectiveConditionId });
 
-        // Chain this buy after the previous one for the same market
-        const prev = _buyQueue.get(effectiveConditionId) ?? Promise.resolve();
+        // Chain this buy after the previous one for the same outcome token.
+        const prev = _buyQueue.get(positionKey) ?? Promise.resolve();
         const current = prev
-            .then(() => _doExecuteBuy(trade, marketOpts, effectiveConditionId))
+            .then(() => _doExecuteBuy(trade, marketOpts, effectiveConditionId, positionKey))
             .finally(() => {
                 // Remove from map only if we're still the tail (no newer call queued)
-                if (_buyQueue.get(effectiveConditionId) === current) {
-                    _buyQueue.delete(effectiveConditionId);
+                if (_buyQueue.get(positionKey) === current) {
+                    _buyQueue.delete(positionKey);
                 }
             });
-        _buyQueue.set(effectiveConditionId, current);
+        _buyQueue.set(positionKey, current);
         return current;
     });
 
@@ -194,10 +193,11 @@ async function _tryGtcFallback(client, tokenId, tradeSize, price, marketOpts) {
 }
 
 /**
- * Internal: the actual buy logic, guaranteed to run serially per market.
+ * Internal: the actual buy logic, guaranteed to run serially per outcome token.
  */
-async function _doExecuteBuy(trade, marketOpts, effectiveConditionId) {
-    const { tokenId, conditionId, market, price, size } = trade;
+async function _doExecuteBuy(trade, marketOpts, effectiveConditionId, positionKey) {
+    const { tokenId, market, price } = trade;
+    const positionRef = { tokenId, conditionId: effectiveConditionId };
 
     // ── Market expiry guard ────────────────────────────────────────────────────
     if (!marketOpts.active || !marketOpts.acceptingOrders) {
@@ -218,15 +218,15 @@ async function _doExecuteBuy(trade, marketOpts, effectiveConditionId) {
     }
     // ──────────────────────────────────────────────────────────────────────────
 
-    // Check existing position and max position size cap
-    const existingPos = getPosition(effectiveConditionId);
+    // Check existing position and max position size cap for this concrete outcome token.
+    const existingPos = getPosition(positionRef);
     if (existingPos) {
         const spent = existingPos.totalCost || 0;
         if (spent >= config.maxPositionSize) {
-            logger.warn(`Max position $${config.maxPositionSize} reached for: ${market || effectiveConditionId} (spent $${spent.toFixed(2)}). Skipping.`);
+            logger.warn(`Max position $${config.maxPositionSize} reached for ${trade.outcome || tokenId} in ${market || effectiveConditionId} (spent $${spent.toFixed(2)}). Skipping.`);
             return;
         }
-        logger.info(`Adding to existing position (spent $${spent.toFixed(2)} / $${config.maxPositionSize})`);
+        logger.info(`Adding to existing outcome position (spent $${spent.toFixed(2)} / $${config.maxPositionSize})`);
     }
 
     // Calculate our trade size (independent of individual fill event)
@@ -264,7 +264,7 @@ async function _doExecuteBuy(trade, marketOpts, effectiveConditionId) {
         if (existingPos) {
             const newShares = existingPos.shares + dryShares;
             const newTotalCost = existingPos.totalCost + tradeSize;
-            updatePosition(effectiveConditionId, {
+            updatePosition(positionRef, {
                 shares: newShares,
                 avgBuyPrice: newTotalCost / newShares,
                 totalCost: newTotalCost,
@@ -366,7 +366,7 @@ async function _doExecuteBuy(trade, marketOpts, effectiveConditionId) {
         const newShares = existingPos.shares + totalSharesFilled;
         const newTotalCost = existingPos.totalCost + totalCostFilled;
         const newAvgBuyPrice = newTotalCost / newShares;
-        updatePosition(effectiveConditionId, {
+        updatePosition(positionRef, {
             shares: newShares,
             avgBuyPrice: newAvgBuyPrice,
             totalCost: newTotalCost,
@@ -395,7 +395,7 @@ async function _doExecuteBuy(trade, marketOpts, effectiveConditionId) {
 
         // Auto-sell only on initial entry, not on accumulation
         if (config.autoSellEnabled) {
-            await placeAutoSell(effectiveConditionId, tokenId, totalSharesFilled, fillAvgPrice, marketOpts);
+            await placeAutoSell(positionRef, tokenId, totalSharesFilled, fillAvgPrice, marketOpts);
         }
     }
 }
@@ -415,10 +415,12 @@ export async function executeSell(trade) {
         effectiveConditionId = marketOpts.conditionId;
     }
 
-    // Check if we have a position
-    const position = getPosition(effectiveConditionId);
+    const positionRef = { tokenId, conditionId: effectiveConditionId };
+
+    // Check if we have a position for this concrete outcome token.
+    const position = getPosition(positionRef);
     if (!position) {
-        logger.warn(`No position found for: ${market || effectiveConditionId}. Skipping sell.`);
+        logger.warn(`No position found for ${trade.outcome || tokenId} in ${market || effectiveConditionId}. Skipping sell.`);
         return;
     }
 
@@ -435,7 +437,7 @@ export async function executeSell(trade) {
         const returned = position.shares * sellPrice;
         const pnl = returned - (position.totalCost || 0);
         releasePaperBalance(returned, pnl);
-        removePosition(effectiveConditionId);
+        removePosition(positionRef);
         return;
     }
 
@@ -464,7 +466,7 @@ export async function executeSell(trade) {
         logger.warn(`Could not fetch open orders to cancel: ${err.message}`);
     }
 
-    updatePosition(effectiveConditionId, { status: 'selling' });
+    updatePosition(positionRef, { status: 'selling' });
 
     if (!marketOpts) {
         marketOpts = await getMarketOptions(tokenId);
@@ -484,7 +486,7 @@ export async function executeSell(trade) {
     if (onChain !== null) {
         if (onChain < 0.0001) {
             logger.warn(`On-chain balance is 0 for ${position.market} — position already sold or redeemed`);
-            removePosition(effectiveConditionId);
+            removePosition(positionRef);
             return;
         }
         if (onChain < sharesToSell) {
@@ -566,10 +568,10 @@ export async function executeSell(trade) {
     }
 
     if (filled) {
-        removePosition(effectiveConditionId);
+        removePosition(positionRef);
         logger.money(`Position sold: ${position.market}`);
     } else {
-        updatePosition(effectiveConditionId, { status: 'open' });
+        updatePosition(positionRef, { status: 'open' });
         logger.error(`Failed to sell ${position.market} after ${config.maxRetries} attempts`);
     }
 }

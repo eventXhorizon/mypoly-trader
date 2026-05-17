@@ -28,11 +28,11 @@ function shortMarket(name) {
 }
 
 function marketKeyForTrade(trade) {
-    return trade.conditionId || shortMarket(trade.market).toLowerCase() || trade.tokenId;
+    return trade.tokenId || trade.conditionId || shortMarket(trade.market).toLowerCase();
 }
 
 function marketKeyForPosition(position) {
-    return position.marketKey || position.conditionId || shortMarket(position.market).toLowerCase() || position.tokenId;
+    return position.marketKey || position.tokenId || position.conditionId || shortMarket(position.market).toLowerCase();
 }
 
 function marketCost(account, marketKey) {
@@ -107,13 +107,13 @@ export function applyPaperTrade(trade) {
 
         const effectiveMin = Math.max(config.minTradeSize, 1);
         if (cost < effectiveMin) {
-            const reason = remainingCap <= 0 ? 'market cap reached' : 'below minimum';
+            const reason = remainingCap <= 0 ? 'outcome cap reached' : 'below minimum';
             account.skippedBuys += 1;
             appendRecent(account, {
                 type: 'BUY',
                 market: shortMarket(trade.market || trade.tokenId),
-                note: reason === 'market cap reached'
-                    ? `skipped cap $${config.maxPositionSize.toFixed(2)} per market`
+                note: reason === 'outcome cap reached'
+                    ? `skipped cap $${config.maxPositionSize.toFixed(2)} per outcome`
                     : `skipped size $${cost.toFixed(2)} < $${effectiveMin}`,
             });
             account.updatedAt = new Date().toISOString();

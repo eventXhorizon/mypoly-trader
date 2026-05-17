@@ -17,7 +17,7 @@ function shortMarket(name) {
 }
 
 function marketKeyForTrade(trade) {
-    return trade.conditionId || shortMarket(trade.market).toLowerCase() || trade.tokenId || '';
+    return trade.tokenId || trade.conditionId || shortMarket(trade.market).toLowerCase() || '';
 }
 
 function createPool() {

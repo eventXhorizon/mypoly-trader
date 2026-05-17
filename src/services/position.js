@@ -5,20 +5,77 @@ const POSITIONS_FILE = 'positions.json';
 
 /**
  * Get all current positions
- * @returns {Object} Map of conditionId -> position data
+ * @returns {Object} Map of positionKey -> position data
  */
 export function getPositions() {
     return readState(POSITIONS_FILE, {});
 }
 
 /**
- * Check if we already have a position for this market (conditionId)
- * @param {string} conditionId
+ * Build the storage key for a copy-trade position.
+ *
+ * Use tokenId first so multi-outcome markets can hold separate caps per outcome.
+ * Older state used conditionId as the key; callers can still pass conditionId only
+ * to read or remove legacy positions.
+ */
+export function positionKeyFor({ tokenId, conditionId } = {}) {
+    return tokenId || conditionId || '';
+}
+
+function legacyConditionMatches(position, keyOrTrade) {
+    if (!position || typeof keyOrTrade !== 'object') return false;
+    if (!keyOrTrade.conditionId || position.conditionId !== keyOrTrade.conditionId) return false;
+    return !keyOrTrade.tokenId || !position.tokenId || position.tokenId === keyOrTrade.tokenId;
+}
+
+function positionMatches(position, keyOrTrade) {
+    if (!position || typeof keyOrTrade !== 'object') return false;
+    if (keyOrTrade.tokenId && position.tokenId) return position.tokenId === keyOrTrade.tokenId;
+    return legacyConditionMatches(position, keyOrTrade);
+}
+
+function findPositionEntry(keyOrTrade) {
+    const positions = getPositions();
+    if (!keyOrTrade) return { positions, key: null, position: null };
+
+    if (typeof keyOrTrade === 'string') {
+        return {
+            positions,
+            key: positions[keyOrTrade] ? keyOrTrade : null,
+            position: positions[keyOrTrade] || null,
+        };
+    }
+
+    const primaryKey = positionKeyFor(keyOrTrade);
+    if (primaryKey && positions[primaryKey]) {
+        return { positions, key: primaryKey, position: positions[primaryKey] };
+    }
+
+    // Legacy compatibility: older versions stored positions under conditionId.
+    if (keyOrTrade.conditionId && legacyConditionMatches(positions[keyOrTrade.conditionId], keyOrTrade)) {
+        return {
+            positions,
+            key: keyOrTrade.conditionId,
+            position: positions[keyOrTrade.conditionId],
+        };
+    }
+
+    for (const [key, position] of Object.entries(positions)) {
+        if (positionMatches(position, keyOrTrade)) {
+            return { positions, key, position };
+        }
+    }
+
+    return { positions, key: null, position: null };
+}
+
+/**
+ * Check if we already have a position for this outcome token
+ * @param {Object|string} keyOrTrade
  * @returns {boolean}
  */
-export function hasPosition(conditionId) {
-    const positions = getPositions();
-    return !!positions[conditionId];
+export function hasPosition(keyOrTrade) {
+    return !!getPosition(keyOrTrade);
 }
 
 /**
@@ -44,7 +101,9 @@ export function addPosition({
     sellOrderId,
 }) {
     const positions = getPositions();
-    positions[conditionId] = {
+    const positionKey = positionKeyFor({ tokenId, conditionId });
+    positions[positionKey] = {
+        positionKey,
         conditionId,
         tokenId,
         market,
@@ -63,15 +122,19 @@ export function addPosition({
 
 /**
  * Update a position
- * @param {string} conditionId
+ * @param {Object|string} keyOrTrade
  * @param {Object} updates - Fields to update
  */
-export function updatePosition(conditionId, updates) {
-    const positions = getPositions();
-    if (positions[conditionId]) {
-        positions[conditionId] = {
-            ...positions[conditionId],
+export function updatePosition(keyOrTrade, updates) {
+    const { positions, key, position: existing } = findPositionEntry(keyOrTrade);
+    if (existing && key) {
+        const next = { ...existing, ...updates };
+        const nextKey = positionKeyFor(next) || key;
+        if (nextKey !== key) delete positions[key];
+        positions[nextKey] = {
+            ...existing,
             ...updates,
+            positionKey: nextKey,
             updatedAt: new Date().toISOString(),
         };
         writeState(POSITIONS_FILE, positions);
@@ -80,26 +143,25 @@ export function updatePosition(conditionId, updates) {
 
 /**
  * Remove a position (after sell or redeem)
- * @param {string} conditionId
+ * @param {Object|string} keyOrTrade
  */
-export function removePosition(conditionId) {
-    const positions = getPositions();
-    if (positions[conditionId]) {
-        const market = positions[conditionId].market;
-        delete positions[conditionId];
+export function removePosition(keyOrTrade) {
+    const { positions, key, position: existing } = findPositionEntry(keyOrTrade);
+    if (existing && key) {
+        const market = existing.market;
+        delete positions[key];
         writeState(POSITIONS_FILE, positions);
         logger.info(`Position removed: ${market}`);
     }
 }
 
 /**
- * Get position by conditionId
- * @param {string} conditionId
+ * Get position by token/condition key.
+ * @param {Object|string} keyOrTrade
  * @returns {Object|null}
  */
-export function getPosition(conditionId) {
-    const positions = getPositions();
-    return positions[conditionId] || null;
+export function getPosition(keyOrTrade) {
+    return findPositionEntry(keyOrTrade).position;
 }
 
 /**

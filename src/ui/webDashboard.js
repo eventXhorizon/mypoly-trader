@@ -660,7 +660,7 @@ function html() {
               <input id="sizePercent" type="number" min="0.01" step="0.01">
             </div>
             <div class="form-field">
-              <label for="maxPositionSize">Max per market</label>
+              <label for="maxPositionSize">Max per outcome</label>
               <input id="maxPositionSize" type="number" min="0.01" step="0.01">
             </div>
           </div>
