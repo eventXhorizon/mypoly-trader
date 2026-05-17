@@ -460,12 +460,15 @@ SELL_SLIPPAGE_PERCENT=2
 ```env
 WEB_HOST=0.0.0.0
 WEB_PORT=8787
+STATUS_POSITIONS_VERBOSE=false
 ```
 
 含义：
 
 - `WEB_HOST=0.0.0.0`：允许外部浏览器访问 dashboard。
 - `WEB_PORT=8787`：dashboard 端口。
+- `STATUS_POSITIONS_VERBOSE=false`：终端/容器日志里只输出持仓数量和总成本，不逐条刷已经开仓的订单。持仓明细在 dashboard 的 `Open Positions` 里点开查看。
+- `STATUS_POSITIONS_VERBOSE=true`：每次状态检查都逐条输出所有持仓明细，适合临时排查，但持仓多时会刷屏。
 
 如果直接运行：
 

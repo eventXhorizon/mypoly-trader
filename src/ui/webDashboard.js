@@ -457,6 +457,11 @@ function html() {
       border-radius: 8px;
       background: var(--surface);
     }
+    .positions-summary {
+      color: var(--muted);
+      line-height: 1.45;
+      padding: 4px 0;
+    }
     .market {
       font-weight: 650;
       line-height: 1.35;
@@ -722,7 +727,10 @@ function html() {
       <div class="panel">
         <div class="panel-title">
           <span>Open Positions</span>
-          <span id="updatedAt" class="small"></span>
+          <div class="log-toolbar">
+            <span id="updatedAt" class="small"></span>
+            <button id="togglePositions" type="button">Show positions</button>
+          </div>
         </div>
         <div id="positions" class="panel-body positions"><div class="empty">No open positions</div></div>
       </div>
@@ -775,6 +783,7 @@ function html() {
       settingsMessage: document.getElementById('settingsMessage'),
       wallets: document.getElementById('wallets'),
       positions: document.getElementById('positions'),
+      togglePositions: document.getElementById('togglePositions'),
       updatedAt: document.getElementById('updatedAt'),
       ledger: document.getElementById('ledger'),
       ledgerStatus: document.getElementById('ledgerStatus'),
@@ -788,6 +797,8 @@ function html() {
     };
     let autoScroll = true;
     let settingsDirty = false;
+    let positionsExpanded = false;
+    let lastState = null;
 
     function money(value, signed = false) {
       const number = Number(value || 0);
@@ -798,6 +809,13 @@ function html() {
     function shortAddr(addr) {
       if (!addr) return '';
       return addr.slice(0, 6) + '...' + addr.slice(-4);
+    }
+
+    function sourceLabelForPosition(pos, account) {
+      if (pos.traderLabel && pos.traderAddress) return pos.traderLabel + ' ' + shortAddr(pos.traderAddress);
+      if (pos.traderLabel) return pos.traderLabel;
+      if (pos.traderAddress) return shortAddr(pos.traderAddress);
+      return shortAddr(account.address);
     }
 
     function setPnlClass(node, value) {
@@ -887,6 +905,7 @@ function html() {
     }
 
     function renderState(state) {
+      lastState = state;
       const totals = state.totals || {};
       const cfg = state.config || {};
       els.title.textContent = cfg.title || 'Polymarket Dashboard';
@@ -924,8 +943,17 @@ function html() {
         }
       }
       if (positions.length === 0) {
+        els.togglePositions.disabled = true;
+        els.togglePositions.textContent = 'Show positions';
         els.positions.innerHTML = '<div class="empty">No open positions</div>';
+      } else if (!positionsExpanded) {
+        els.togglePositions.disabled = false;
+        els.togglePositions.textContent = 'Show positions (' + positions.length + ')';
+        const openCost = positions.reduce((sum, item) => sum + Number(item.position.totalCost || 0), 0);
+        els.positions.innerHTML = '<div class="positions-summary">' + positions.length + ' open position(s) hidden | Open cost ' + money(openCost) + '</div>';
       } else {
+        els.togglePositions.disabled = false;
+        els.togglePositions.textContent = 'Hide positions (' + positions.length + ')';
         els.positions.replaceChildren(...positions.map(renderPosition));
       }
       renderLedger(state.pnl || {});
@@ -1055,11 +1083,12 @@ function html() {
 
     function renderPosition(item) {
       const pos = item.position;
+      const source = sourceLabelForPosition(pos, item.account);
       const node = document.createElement('div');
       node.className = 'position';
       node.innerHTML =
         '<div class="market">' + escapeHtml(pos.market || pos.tokenId || '') + '</div>' +
-        '<div class="small">' + shortAddr(item.account.address) + ' | ' +
+        '<div class="small">' + escapeHtml(source) + ' | ' +
         escapeHtml(pos.outcome || '?') + ' | ' +
         Number(pos.shares || 0).toFixed(3) + ' sh @ $' +
         Number(pos.avgBuyPrice || 0).toFixed(3) + ' | cost ' +
@@ -1094,6 +1123,10 @@ function html() {
     });
     els.clearLogs.addEventListener('click', () => {
       els.logList.replaceChildren();
+    });
+    els.togglePositions.addEventListener('click', () => {
+      positionsExpanded = !positionsExpanded;
+      if (lastState) renderState(lastState);
     });
     els.settingsForm.addEventListener('input', () => {
       if (els.settingsForm.closest('.panel').hidden) return;

@@ -81,27 +81,34 @@ async function printStatus() {
 
         logger.info(`--- Status | ${config.dryRun ? 'Paper balance' : 'Balance'}: $${balance.toFixed(2)} | Open positions: ${positions.length} ---`);
 
-        for (const pos of positions) {
-            let pnlStr = '';
-            try {
-                const client = getClient();
-                const mp = await client.getMidpoint(pos.tokenId);
-                const mid = parseFloat(mp?.mid ?? mp ?? '0');
-                if (mid > 0) {
-                    const pnl  = (mid - pos.avgBuyPrice) * pos.shares;
-                    const sign = pnl >= 0 ? '+' : '';
-                    const pct  = pos.totalCost > 0 ? ((pnl / pos.totalCost) * 100).toFixed(1) : '0.0';
-                    pnlStr = ` | unrealized ${sign}$${pnl.toFixed(2)} (${sign}${pct}%)`;
-                }
-            } catch { /* price unavailable */ }
+        if (!config.statusPositionsVerbose) {
+            if (positions.length > 0) {
+                const openCost = positions.reduce((sum, pos) => sum + (pos.totalCost || 0), 0);
+                logger.info(`  Open cost: $${openCost.toFixed(2)} | position details hidden; expand Open Positions in the dashboard`);
+            }
+        } else {
+            for (const pos of positions) {
+                let pnlStr = '';
+                try {
+                    const client = getClient();
+                    const mp = await client.getMidpoint(pos.tokenId);
+                    const mid = parseFloat(mp?.mid ?? mp ?? '0');
+                    if (mid > 0) {
+                        const pnl  = (mid - pos.avgBuyPrice) * pos.shares;
+                        const sign = pnl >= 0 ? '+' : '';
+                        const pct  = pos.totalCost > 0 ? ((pnl / pos.totalCost) * 100).toFixed(1) : '0.0';
+                        pnlStr = ` | unrealized ${sign}$${pnl.toFixed(2)} (${sign}${pct}%)`;
+                    }
+                } catch { /* price unavailable */ }
 
-            const name = (pos.market || pos.tokenId || '').substring(0, 50);
-            const source = sourceLabelForPosition(pos);
-            logger.info(
-                `  [${source}] [${pos.outcome || '?'}] ${name}` +
-                ` | ${pos.shares.toFixed(4)} sh @ $${pos.avgBuyPrice.toFixed(4)}` +
-                ` | spent $${(pos.totalCost || 0).toFixed(2)}${pnlStr}`,
-            );
+                const name = (pos.market || pos.tokenId || '').substring(0, 50);
+                const source = sourceLabelForPosition(pos);
+                logger.info(
+                    `  [${source}] [${pos.outcome || '?'}] ${name}` +
+                    ` | ${pos.shares.toFixed(4)} sh @ $${pos.avgBuyPrice.toFixed(4)}` +
+                    ` | spent $${(pos.totalCost || 0).toFixed(2)}${pnlStr}`,
+                );
+            }
         }
 
         if (config.dryRun) {
