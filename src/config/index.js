@@ -111,9 +111,11 @@ const config = {
   // Dry run
   dryRun: process.env.DRY_RUN === 'true',
 
-  // Retry settings
-  maxRetries: 5,
-  retryDelay: 3000,
+  // Order execution settings
+  maxRetries: parseInt(process.env.ORDER_MAX_RETRIES || '5', 10),
+  retryDelay: parseInt(process.env.ORDER_RETRY_DELAY_MS || '3000', 10),
+  buySlippagePercent: parseFloat(process.env.BUY_SLIPPAGE_PERCENT || '2'),
+  sellSlippagePercent: parseFloat(process.env.SELL_SLIPPAGE_PERCENT || '2'),
 
   // Skip buy if market closes within this many seconds (default 5 minutes)
   minMarketTimeLeft: parseInt(process.env.MIN_MARKET_TIME_LEFT || '300', 10),
@@ -121,6 +123,8 @@ const config = {
   // Seconds to wait for a GTC limit order to fill when FAK finds no liquidity
   // (happens when copying trades into "next market" before sellers arrive)
   gtcFallbackTimeout: parseInt(process.env.GTC_FALLBACK_TIMEOUT || '60', 10),
+  buyGtcFallbackTimeout: parseInt(process.env.BUY_GTC_FALLBACK_TIMEOUT || process.env.GTC_FALLBACK_TIMEOUT || '60', 10),
+  sellGtcFallbackTimeout: parseInt(process.env.SELL_GTC_FALLBACK_TIMEOUT || process.env.GTC_FALLBACK_TIMEOUT || '60', 10),
 
   // ── Market Maker ──────────────────────────────────────────────
   mmAssets: (process.env.MM_ASSETS || 'btc')
@@ -256,6 +260,15 @@ export function validateConfig() {
   }
   if (![0, 1, 2, 3].includes(config.clobSignatureType)) {
     throw new Error('Invalid CLOB_SIGNATURE_TYPE. Use 0, 1, 2, or 3.');
+  }
+  if (!Number.isInteger(config.maxRetries) || config.maxRetries < 0) {
+    throw new Error('ORDER_MAX_RETRIES must be a non-negative integer.');
+  }
+  if (!Number.isInteger(config.retryDelay) || config.retryDelay < 0) {
+    throw new Error('ORDER_RETRY_DELAY_MS must be a non-negative integer.');
+  }
+  if (config.buySlippagePercent < 0 || config.sellSlippagePercent < 0) {
+    throw new Error('BUY_SLIPPAGE_PERCENT and SELL_SLIPPAGE_PERCENT must be >= 0.');
   }
 }
 

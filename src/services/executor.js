@@ -32,6 +32,16 @@ function tradeSourceLabel(trade) {
     return trade?.traderLabel || trade?.traderAddress || 'unknown';
 }
 
+function slippagePrice(price, side, percent) {
+    const p = Number(price);
+    if (!Number.isFinite(p) || p <= 0) return side === Side.BUY ? 0.99 : 0.01;
+    const multiplier = side === Side.BUY ? 1 + percent / 100 : 1 - percent / 100;
+    const bounded = side === Side.BUY
+        ? Math.min(p * multiplier, 0.99)
+        : Math.max(p * multiplier, 0.01);
+    return parseFloat(bounded.toFixed(4));
+}
+
 // Per-outcome buy queue: prevents concurrent buys for the same token.
 // Each position key maps to the Promise tail of its queue so calls are chained.
 const _buyQueue = new Map();
@@ -145,11 +155,14 @@ export function executeBuy(trade) {
  *
  * Returns { sharesFilled, costFilled } on success, or null on failure/timeout.
  */
-async function _tryGtcFallback(client, tokenId, tradeSize, price, marketOpts) {
-    const gtcPrice = parseFloat(Math.min(price * 1.02, 0.99).toFixed(4));
+async function _tryGtcBuyFallback(client, tokenId, tradeSize, price, marketOpts, source) {
+    const timeoutSec = config.buyGtcFallbackTimeout;
+    if (timeoutSec <= 0) return null;
+
+    const gtcPrice = slippagePrice(price, Side.BUY, config.buySlippagePercent);
     const shares   = parseFloat((tradeSize / gtcPrice).toFixed(4));
 
-    logger.info(`No liquidity via FAK — placing GTC limit buy: ${shares} shares @ $${gtcPrice}`);
+    logger.info(`[${source}] No liquidity via FAK — placing GTC limit buy: ${shares} shares @ $${gtcPrice}`);
 
     let orderId;
     try {
@@ -159,18 +172,19 @@ async function _tryGtcFallback(client, tokenId, tradeSize, price, marketOpts) {
             OrderType.GTC,
         );
         if (!resp?.success) {
-            logger.warn(`GTC fallback rejected: ${clobRejectReason(resp)}`);
+            logger.warn(`[${source}] GTC fallback rejected: ${clobRejectReason(resp)}`);
             return null;
         }
         orderId = resp.orderID;
-        logger.info(`GTC order placed: ${orderId} — waiting for fill (up to ${config.gtcFallbackTimeout}s)...`);
+        logger.info(`[${source}] GTC order placed: ${orderId} — waiting for fill (up to ${timeoutSec}s)...`);
     } catch (err) {
-        logger.warn(`GTC fallback order failed: ${err.message}`);
+        logger.warn(`[${source}] GTC fallback order failed: ${err.message}`);
         return null;
     }
 
-    const deadline    = Date.now() + config.gtcFallbackTimeout * 1000;
+    const deadline    = Date.now() + timeoutSec * 1000;
     const pollMs      = 3000;
+    let bestMatched = 0;
 
     while (Date.now() < deadline) {
         await new Promise((r) => setTimeout(r, pollMs));
@@ -180,23 +194,95 @@ async function _tryGtcFallback(client, tokenId, tradeSize, price, marketOpts) {
             const status  = (order?.status ?? order?.order_status ?? '').toLowerCase();
 
             if (matched > 0 || status === 'matched' || status === 'filled') {
-                const sharesFilled = matched > 0 ? matched : shares;
-                const costFilled   = sharesFilled * gtcPrice;
-                logger.success(`GTC filled: ${sharesFilled.toFixed(4)} shares @ $${gtcPrice} | orderID: ${orderId}`);
-                return { sharesFilled, costFilled };
+                bestMatched = Math.max(bestMatched, matched > 0 ? matched : shares);
+                if (bestMatched >= shares * 0.999 || status === 'matched' || status === 'filled') {
+                    const sharesFilled = Math.min(bestMatched, shares);
+                    const costFilled   = sharesFilled * gtcPrice;
+                    logger.success(`[${source}] GTC buy filled: ${sharesFilled.toFixed(4)} shares @ $${gtcPrice} | orderID: ${orderId}`);
+                    return { sharesFilled, costFilled };
+                }
             }
 
             // Order gone from open orders also means it was matched
             if (status === 'cancelled') {
-                logger.warn(`GTC order ${orderId} was cancelled externally`);
-                return null;
+                logger.warn(`[${source}] GTC order ${orderId} was cancelled externally`);
+                break;
             }
         } catch { /* getOrder can 404 briefly — keep polling */ }
     }
 
     // Timed out — cancel the GTC
-    logger.warn(`GTC order ${orderId} not filled in ${config.gtcFallbackTimeout}s — cancelling`);
+    logger.warn(`[${source}] GTC order ${orderId} not fully filled in ${timeoutSec}s — cancelling remainder`);
     try { await client.cancelOrder({ orderID: orderId }); } catch { /* ignore */ }
+    if (bestMatched > 0) {
+        const sharesFilled = Math.min(bestMatched, shares);
+        const costFilled   = sharesFilled * gtcPrice;
+        logger.success(`[${source}] GTC buy partially filled: ${sharesFilled.toFixed(4)} shares @ $${gtcPrice} | orderID: ${orderId}`);
+        return { sharesFilled, costFilled };
+    }
+    return null;
+}
+
+async function _tryGtcSellFallback(client, tokenId, sharesToSell, price, marketOpts, source) {
+    const timeoutSec = config.sellGtcFallbackTimeout;
+    if (timeoutSec <= 0) return null;
+
+    const gtcPrice = slippagePrice(price, Side.SELL, config.sellSlippagePercent);
+    const shares = parseFloat(sharesToSell.toFixed(4));
+    logger.info(`[${source}] No bid liquidity via FAK — placing GTC limit sell: ${shares} shares @ $${gtcPrice}`);
+
+    let orderId;
+    try {
+        const resp = await client.createAndPostOrder(
+            { tokenID: tokenId, side: Side.SELL, price: gtcPrice, size: shares },
+            { tickSize: marketOpts.tickSize, negRisk: marketOpts.negRisk },
+            OrderType.GTC,
+        );
+        if (!resp?.success) {
+            logger.warn(`[${source}] GTC sell fallback rejected: ${clobRejectReason(resp)}`);
+            return null;
+        }
+        orderId = resp.orderID;
+        logger.info(`[${source}] GTC sell order placed: ${orderId} — waiting for fill (up to ${timeoutSec}s)...`);
+    } catch (err) {
+        logger.warn(`[${source}] GTC sell fallback order failed: ${err.message}`);
+        return null;
+    }
+
+    const deadline = Date.now() + timeoutSec * 1000;
+    const pollMs = 3000;
+    let bestMatched = 0;
+
+    while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, pollMs));
+        try {
+            const order = await client.getOrder(orderId);
+            const matched = parseFloat(order?.size_matched ?? order?.matched_amount ?? '0');
+            const status = (order?.status ?? order?.order_status ?? '').toLowerCase();
+
+            if (matched > 0 || status === 'matched' || status === 'filled') {
+                bestMatched = Math.max(bestMatched, matched > 0 ? matched : shares);
+                if (bestMatched >= shares * 0.999 || status === 'matched' || status === 'filled') {
+                    const sharesFilled = Math.min(bestMatched, shares);
+                    logger.success(`[${source}] GTC sell filled: ${sharesFilled.toFixed(4)} shares @ $${gtcPrice} | orderID: ${orderId}`);
+                    return { sharesFilled, price: gtcPrice };
+                }
+            }
+
+            if (status === 'cancelled') {
+                logger.warn(`[${source}] GTC sell order ${orderId} was cancelled externally`);
+                break;
+            }
+        } catch { /* getOrder can 404 briefly — keep polling */ }
+    }
+
+    logger.warn(`[${source}] GTC sell order ${orderId} not fully filled in ${timeoutSec}s — cancelling remainder`);
+    try { await client.cancelOrder({ orderID: orderId }); } catch { /* ignore */ }
+    if (bestMatched > 0) {
+        const sharesFilled = Math.min(bestMatched, shares);
+        logger.success(`[${source}] GTC sell partially filled: ${sharesFilled.toFixed(4)} shares @ $${gtcPrice} | orderID: ${orderId}`);
+        return { sharesFilled, price: gtcPrice };
+    }
     return null;
 }
 
@@ -311,14 +397,14 @@ async function _doExecuteBuy(trade, marketOpts, effectiveConditionId, positionKe
                 break;
             }
 
-            logger.info(`Buy attempt ${attempt}/${config.maxRetries} | Amount: $${remainingAmount.toFixed(2)}`);
+            logger.info(`[${source}] Buy attempt ${attempt}/${config.maxRetries} | Amount: $${remainingAmount.toFixed(2)}`);
 
             const response = await client.createAndPostMarketOrder(
                 {
                     tokenID: tokenId,
                     side: Side.BUY,
                     amount: remainingAmount,
-                    price: Math.min(price * 1.02, 0.99), // 2% slippage, max 0.99
+                    price: slippagePrice(price, Side.BUY, config.buySlippagePercent),
                     orderType: OrderType.FAK,
                     userUSDCBalance: Math.max(balance - totalCostFilled, 0),
                 },
@@ -333,20 +419,20 @@ async function _doExecuteBuy(trade, marketOpts, effectiveConditionId, positionKe
                 const { buyShares: sharesFilled, buyCost: costFilled } = parseOrderFill(response);
 
                 if (sharesFilled > 0) {
-                    logger.success(`Order filled: ${response.orderID} | ${sharesFilled.toFixed(4)} shares @ ~$${(costFilled / sharesFilled).toFixed(4)}`);
+                    logger.success(`[${source}] Order filled: ${response.orderID} | ${sharesFilled.toFixed(4)} shares @ ~$${(costFilled / sharesFilled).toFixed(4)}`);
                     totalSharesFilled += sharesFilled;
                     totalCostFilled   += costFilled || (sharesFilled * price);
                     filled = true;
                     // If remainder is below $1 minimum, stop; otherwise loop for partial fill
                     if (tradeSize - totalCostFilled < effectiveMin) break;
                 } else {
-                    logger.warn(`No liquidity — FAK filled 0 shares (attempt ${attempt})`);
+                    logger.warn(`[${source}] No liquidity — FAK filled 0 shares (attempt ${attempt})`);
                 }
             } else {
-                logger.warn(`Order rejected: ${clobRejectReason(response)}`);
+                logger.warn(`[${source}] Order rejected: ${clobRejectReason(response)}`);
             }
         } catch (err) {
-            logger.error(`Buy attempt ${attempt} failed: ${err.message}`);
+            logger.error(`[${source}] Buy attempt ${attempt} failed: ${err.message}`);
         }
 
         if (attempt < config.maxRetries) {
@@ -355,8 +441,8 @@ async function _doExecuteBuy(trade, marketOpts, effectiveConditionId, positionKe
     }
 
     // FAK found no liquidity — fall back to GTC limit order and wait for fill
-    if (!filled && config.gtcFallbackTimeout > 0) {
-        const gtcResult = await _tryGtcFallback(client, tokenId, tradeSize, price, marketOpts);
+    if (!filled && config.buyGtcFallbackTimeout > 0) {
+        const gtcResult = await _tryGtcBuyFallback(client, tokenId, tradeSize, price, marketOpts, source);
         if (gtcResult) {
             totalSharesFilled = gtcResult.sharesFilled;
             totalCostFilled   = gtcResult.costFilled;
@@ -365,7 +451,7 @@ async function _doExecuteBuy(trade, marketOpts, effectiveConditionId, positionKe
     }
 
     if (!filled || totalCostFilled === 0) {
-        logger.error(`Failed to fill buy order for ${market || tokenId} after ${config.maxRetries} attempts`);
+        logger.error(`[${source}] Failed to fill buy order for ${market || tokenId} after ${config.maxRetries} attempts`);
         return;
     }
 
@@ -382,17 +468,17 @@ async function _doExecuteBuy(trade, marketOpts, effectiveConditionId, positionKe
             avgBuyPrice: newAvgBuyPrice,
             totalCost: newTotalCost,
         });
-        logger.success(`Position updated: ${existingPos.market} | total $${newTotalCost.toFixed(2)} / $${config.maxPositionSize}`);
+        logger.success(`[${source}] Position updated: ${existingPos.market} | total $${newTotalCost.toFixed(2)} / $${config.maxPositionSize}`);
         logger.info(buildCopyOpenLatencyLog(trade, new Date()));
     } else {
         // New position
-            addPosition({
-                conditionId: effectiveConditionId,
-                tokenId,
-                traderAddress: trade.traderAddress,
-                traderLabel: trade.traderLabel,
-                market: market || marketOpts.question || tokenId,
-                shares: totalSharesFilled,
+        addPosition({
+            conditionId: effectiveConditionId,
+            tokenId,
+            traderAddress: trade.traderAddress,
+            traderLabel: trade.traderLabel,
+            market: market || marketOpts.question || tokenId,
+            shares: totalSharesFilled,
             avgBuyPrice: fillAvgPrice,
             totalCost: totalCostFilled,
             outcome: trade.outcome,
@@ -512,6 +598,7 @@ export async function executeSell(trade) {
     sharesToSell = Math.floor(sharesToSell * 10000) / 10000;
 
     let filled = false;
+    let sharesFilledTotal = 0;
 
     for (let attempt = 1; attempt <= config.maxRetries; attempt++) {
         try {
@@ -524,7 +611,7 @@ export async function executeSell(trade) {
                         tokenID: tokenId,
                         side: Side.SELL,
                         amount: sharesToSell,
-                        price: Math.max(price * 0.98, 0.01), // 2% slippage, min 0.01
+                        price: slippagePrice(price, Side.SELL, config.sellSlippagePercent),
                         orderType: OrderType.FAK,
                     },
                     {
@@ -538,6 +625,7 @@ export async function executeSell(trade) {
                     const { sellShares: sharesFilled } = parseOrderFill(response);
                     if (sharesFilled > 0) {
                         logger.success(`[${source}] Sell filled: ${response.orderID} | ${sharesFilled.toFixed(4)} shares`);
+                        sharesFilledTotal += sharesFilled;
                         filled = true;
                         break;
                     } else {
@@ -566,6 +654,7 @@ export async function executeSell(trade) {
 
                 if (response && response.success) {
                     logger.success(`[${source}] Limit sell placed: ${response.orderID} @ $${price}`);
+                    sharesFilledTotal = sharesToSell;
                     filled = true;
                     break;
                 } else {
@@ -581,9 +670,28 @@ export async function executeSell(trade) {
         }
     }
 
+    if (!filled && config.sellMode === 'market' && config.sellGtcFallbackTimeout > 0) {
+        const gtcResult = await _tryGtcSellFallback(client, tokenId, sharesToSell, price, marketOpts, source);
+        if (gtcResult) {
+            sharesFilledTotal += gtcResult.sharesFilled;
+            filled = true;
+        }
+    }
+
     if (filled) {
-        removePosition(positionRef);
-        logger.money(`[${source}] Position sold: ${position.market}`);
+        if (sharesFilledTotal >= position.shares * 0.999) {
+            removePosition(positionRef);
+            logger.money(`[${source}] Position sold: ${position.market}`);
+        } else {
+            const remainingShares = Math.max(0, position.shares - sharesFilledTotal);
+            const remainingCost = position.avgBuyPrice * remainingShares;
+            updatePosition(positionRef, {
+                shares: remainingShares,
+                totalCost: remainingCost,
+                status: 'open',
+            });
+            logger.money(`[${source}] Position partially sold: ${position.market} | sold ${sharesFilledTotal.toFixed(4)} sh | remaining ${remainingShares.toFixed(4)} sh`);
+        }
     } else {
         updatePosition(positionRef, { status: 'open' });
         logger.error(`[${source}] Failed to sell ${position.market} after ${config.maxRetries} attempts`);

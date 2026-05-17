@@ -347,9 +347,113 @@ REDEEM_INTERVAL=60
 
 ```env
 GTC_FALLBACK_TIMEOUT=60
+BUY_GTC_FALLBACK_TIMEOUT=60
+SELL_GTC_FALLBACK_TIMEOUT=60
 ```
 
-当市价 FAK 订单没有流动性时，程序会尝试挂 GTC 限价买单并等待成交。这个值表示最多等待多少秒。
+先理解两个订单类型：
+
+**FAK** 是 Fill And Kill。意思是“能立刻成交多少就成交多少，剩下的马上取消”。它不会挂在订单簿里等待。
+
+举例：
+
+- 目标钱包以 `0.195` 买入。
+- 你的程序尝试用接近 `0.195` 的价格立刻买入。
+- 如果盘口刚好有人愿意卖给你，就会马上成交。
+- 如果盘口没有卖单，或者价格已经变了，FAK 会直接失败，日志里会看到 `no orders found to match with FAK order`。
+
+**GTC** 是 Good Till Cancelled。意思是“挂一个限价单，直到成交、取消或程序主动取消”。它会留在订单簿里等待别人来成交。
+
+举例：
+
+- 目标钱包以 `0.195` 买入。
+- 你的 FAK 买入失败，因为当时没有卖单。
+- 程序改为挂一个 GTC 买单，比如 `0.1989`。
+- 如果之后有人愿意以 `0.1989` 或更低价格卖给你，这个 GTC 买单才会成交。
+- 如果等到超时还没完全成交，程序会取消剩余订单。
+
+当 FAK 订单没有流动性时，程序会尝试挂 GTC 限价单并等待成交。这个值表示最多等待多少秒。
+
+- `BUY_GTC_FALLBACK_TIMEOUT`：买入 FAK 没成交后，挂 GTC 买单最多等多久。
+- `SELL_GTC_FALLBACK_TIMEOUT`：卖出 FAK 没成交后，挂 GTC 卖单最多等多久。
+- `GTC_FALLBACK_TIMEOUT`：通用默认值；如果没有单独配置买入/卖出，就用这个值。
+
+实际日志例子：
+
+```text
+Trade detected! BUY - Will the highest temperature in Hong Kong be 24°C on May 17?
+Buy attempt 1/5
+Order rejected: HTTP 400: no orders found to match with FAK order
+...
+No liquidity via FAK — placing GTC limit buy: 10.0553 shares @ $0.1989
+GTC order placed ... waiting for fill
+GTC buy partially filled: 2.4969 shares @ $0.1989
+```
+
+这表示：
+
+- 目标钱包成交价是 `0.195`。
+- 你的程序先尝试 FAK 立刻买，但当时盘口没有可匹配卖单。
+- 程序随后挂 GTC 限价买单，价格是 `0.1989`。
+- 最后只成交了一部分，所以实际开仓金额可能小于你设置的 `2U`。
+
+卖出也一样：
+
+```text
+Sell attempt 1/5 (market)
+Sell rejected: HTTP 400: no orders found to match with FAK order
+No bid liquidity via FAK — placing GTC limit sell
+```
+
+这表示你的程序想立刻卖出，但当时没有买盘接单。启用 `SELL_GTC_FALLBACK_TIMEOUT` 后，程序会改为挂 GTC 卖单等待成交。
+
+如果你看到：
+
+```text
+No liquidity via FAK
+GTC order placed
+```
+
+说明当时盘口没有足够对手盘，程序改为挂限价单等待。
+
+### ORDER_MAX_RETRIES / ORDER_RETRY_DELAY_MS
+
+```env
+ORDER_MAX_RETRIES=5
+ORDER_RETRY_DELAY_MS=3000
+```
+
+这两个值控制 FAK 订单失败后的重试：
+
+- `ORDER_MAX_RETRIES=5`：最多尝试 5 次 FAK。
+- `ORDER_RETRY_DELAY_MS=3000`：每次失败后等 3 秒再试。
+
+如果你想更快进入 GTC fallback，可以调小，例如：
+
+```env
+ORDER_MAX_RETRIES=1
+ORDER_RETRY_DELAY_MS=500
+BUY_GTC_FALLBACK_TIMEOUT=20
+SELL_GTC_FALLBACK_TIMEOUT=20
+```
+
+代价是：程序会更快挂出 resting limit order，可能不会立即成交，也可能在等待期间价格变化。
+
+### BUY_SLIPPAGE_PERCENT / SELL_SLIPPAGE_PERCENT
+
+```env
+BUY_SLIPPAGE_PERCENT=2
+SELL_SLIPPAGE_PERCENT=2
+```
+
+含义：
+
+- `BUY_SLIPPAGE_PERCENT=2`：买入最多接受目标钱包成交价上浮 2%。
+- `SELL_SLIPPAGE_PERCENT=2`：卖出最多接受目标钱包成交价下浮 2%。
+
+例如目标买入价是 `0.195`，`BUY_SLIPPAGE_PERCENT=2` 时，程序最多用约 `0.1989` 买。
+
+滑点调大可能更容易成交，但也更容易买贵、卖便宜。
 
 ## Web dashboard 配置
 
