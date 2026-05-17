@@ -1,6 +1,46 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+function parseTraderLabels(raw) {
+  const labels = {};
+  for (const entry of (raw || '').split(',')) {
+    const text = entry.trim();
+    if (!text) continue;
+    const sepIndex = text.indexOf('=');
+    if (sepIndex <= 0) continue;
+    const address = text.slice(0, sepIndex).trim().toLowerCase();
+    const label = text.slice(sepIndex + 1).trim();
+    if (/^0x[a-f0-9]{40}$/.test(address) && label) labels[address] = label;
+  }
+  return labels;
+}
+
+function shortAddr(addr) {
+  const text = String(addr || '');
+  return text.length > 10 ? `${text.slice(0, 6)}...${text.slice(-4)}` : text;
+}
+
+function traderLabelMap(addresses, labels) {
+  const map = {};
+  addresses.forEach((address, index) => {
+    map[address] = labels[address] || `W${index + 1}`;
+  });
+  return map;
+}
+
+function traderDisplayMap(addresses, labels) {
+  const labelMap = traderLabelMap(addresses, labels);
+  const map = {};
+  for (const address of addresses) {
+    map[address] = `${labelMap[address]} ${shortAddr(address)}`;
+  }
+  return map;
+}
+
+const traderAddresses = (process.env.TRADER_ADDRESSES || process.env.TRADER_ADDRESS || '')
+  .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+const traderLabels = parseTraderLabels(process.env.TRADER_WALLET_LABELS || '');
+
 const config = {
   // Wallet
   privateKey: process.env.PRIVATE_KEY,         // EOA private key (for signing only)
@@ -22,9 +62,11 @@ const config = {
   polygonRpcUrl: process.env.POLYGON_RPC_URL || 'https://polygon-bor-rpc.publicnode.com',
 
   // Trader to copy
-  traderAddress: process.env.TRADER_ADDRESS,
-  traderAddresses: (process.env.TRADER_ADDRESSES || process.env.TRADER_ADDRESS || '')
-    .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
+  traderAddress: process.env.TRADER_ADDRESS || traderAddresses[0] || '',
+  traderAddresses,
+  traderLabels,
+  traderLabelMap: traderLabelMap(traderAddresses, traderLabels),
+  traderDisplayMap: traderDisplayMap(traderAddresses, traderLabels),
   simStartBalance: parseFloat(process.env.SIM_START_BALANCE || '100'),
   webHost: process.env.WEB_HOST || '0.0.0.0',
   webPort: parseInt(process.env.WEB_PORT || '8787', 10),
@@ -194,10 +236,17 @@ const config = {
 
 // Validation for copy-trade bot
 export function validateConfig() {
-  const required = ['privateKey', 'proxyWallet', 'traderAddress'];
+  const required = ['privateKey', 'proxyWallet'];
   const missing = required.filter((key) => !config[key]);
   if (missing.length > 0) {
     throw new Error(`Missing required config: ${missing.join(', ')}. Check your .env file.`);
+  }
+  if (config.traderAddresses.length === 0) {
+    throw new Error('Missing required config: TRADER_ADDRESS or TRADER_ADDRESSES. Check your .env file.');
+  }
+  const invalid = config.traderAddresses.filter((addr) => !/^0x[a-f0-9]{40}$/.test(addr));
+  if (invalid.length > 0) {
+    throw new Error(`Invalid target wallet address value(s): ${invalid.join(', ')}`);
   }
   if (!['percentage', 'balance'].includes(config.sizeMode)) {
     throw new Error(`Invalid SIZE_MODE: ${config.sizeMode}. Use "percentage" or "balance".`);

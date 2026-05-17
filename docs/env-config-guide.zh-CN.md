@@ -68,6 +68,9 @@ DRY_RUN=false
 PRIVATE_KEY=你的EOA私钥
 PROXY_WALLET_ADDRESS=你的Polymarket proxy wallet地址
 TRADER_ADDRESS=你要跟单的目标钱包地址
+# 多钱包实盘跟单时，用 TRADER_ADDRESSES
+# TRADER_ADDRESSES=0x钱包1,0x钱包2
+# TRADER_WALLET_LABELS=0x钱包1=W1,0x钱包2=体育钱包
 
 SIZE_MODE=percentage
 SIZE_PERCENT=100
@@ -93,8 +96,9 @@ http://你的VPS_IP:8788
 | --- | --- | --- |
 | `PRIVATE_KEY` | EOA 私钥，用来签名 Polymarket 订单。 | 高敏感信息，不要泄露。这个 EOA 通常不需要放资金。 |
 | `PROXY_WALLET_ADDRESS` | 你的 Polymarket proxy wallet / deposit wallet 地址，资金从这里扣。 | CLOB V2 交易余额是 pUSD，不再是旧版 USDC.e。 |
-| `TRADER_ADDRESS` | 你要跟单的目标钱包地址。 | 实盘 `npm run bot` 只跟这个单个钱包。 |
-| `TRADER_ADDRESSES` | 多钱包模拟 watcher 的目标地址列表。 | 只用于 `npm run multi-watch`，不是实盘跟单入口。 |
+| `TRADER_ADDRESS` | 单个目标钱包地址。 | 如果 `TRADER_ADDRESSES` 为空，实盘 bot 会使用这个地址。 |
+| `TRADER_ADDRESSES` | 多个目标钱包地址列表，用逗号分隔。 | 实盘 `npm run bot` / Docker `live-bot` 和 `multi-watch` 都会使用。 |
+| `TRADER_WALLET_LABELS` | 目标钱包备注，用于日志和仓位显示。 | 格式：`0x钱包1=W1,0x钱包2=体育钱包`；不填时自动显示 `W1/W2/W3`。 |
 | `CLOB_SIGNATURE_TYPE` | CLOB V2 签名类型。 | `0=EOA`，`1=POLY_PROXY`，`2=POLY_GNOSIS_SAFE`，`3=POLY_1271`。浏览器钱包生成的 proxy wallet 通常先用 `2`；新 deposit wallet flow 可能需要 `3`。 |
 
 ## CLOB V2 与 pUSD

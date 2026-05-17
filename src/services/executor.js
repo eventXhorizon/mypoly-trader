@@ -2,7 +2,7 @@ import { Side, OrderType } from '@polymarket/clob-client-v2';
 import { ethers } from 'ethers';
 import config from '../config/index.js';
 import { formatClobError, getClient, getUsdcBalance, getPolygonProvider } from './client.js';
-import { addPosition, getPosition, positionKeyFor, updatePosition, removePosition } from './position.js';
+import { addPosition, getPosition, sourcePositionKeyFor, updatePosition, removePosition } from './position.js';
 import { fetchMarketByTokenId } from './watcher.js';
 import { placeAutoSell } from './autoSell.js';
 import { ensureExchangeApproval, CTF_ADDRESS } from './ctf.js';
@@ -26,6 +26,10 @@ function parseOrderFill(response) {
         sellShares: makingAmount,
         sellProceeds: takingAmount,
     };
+}
+
+function tradeSourceLabel(trade) {
+    return trade?.traderLabel || trade?.traderAddress || 'unknown';
 }
 
 // Per-outcome buy queue: prevents concurrent buys for the same token.
@@ -112,7 +116,11 @@ export function executeBuy(trade) {
     // getMarketOptions is a read-only fetch — safe to run outside the queue.
     const queued = getMarketOptions(tokenId).then((marketOpts) => {
         const effectiveConditionId = conditionId || marketOpts.conditionId;
-        const positionKey = positionKeyFor({ tokenId, conditionId: effectiveConditionId });
+        const positionKey = sourcePositionKeyFor({
+            tokenId,
+            conditionId: effectiveConditionId,
+            traderAddress: trade.traderAddress,
+        });
 
         // Chain this buy after the previous one for the same outcome token.
         const prev = _buyQueue.get(positionKey) ?? Promise.resolve();
@@ -197,7 +205,8 @@ async function _tryGtcFallback(client, tokenId, tradeSize, price, marketOpts) {
  */
 async function _doExecuteBuy(trade, marketOpts, effectiveConditionId, positionKey) {
     const { tokenId, market, price } = trade;
-    const positionRef = { tokenId, conditionId: effectiveConditionId };
+    const source = tradeSourceLabel(trade);
+    const positionRef = { tokenId, conditionId: effectiveConditionId, traderAddress: trade.traderAddress };
 
     // ── Market expiry guard ────────────────────────────────────────────────────
     if (!marketOpts.active || !marketOpts.acceptingOrders) {
@@ -223,10 +232,10 @@ async function _doExecuteBuy(trade, marketOpts, effectiveConditionId, positionKe
     if (existingPos) {
         const spent = existingPos.totalCost || 0;
         if (spent >= config.maxPositionSize) {
-            logger.warn(`Max position $${config.maxPositionSize} reached for ${trade.outcome || tokenId} in ${market || effectiveConditionId} (spent $${spent.toFixed(2)}). Skipping.`);
+            logger.warn(`[${source}] Max position $${config.maxPositionSize} reached for ${trade.outcome || tokenId} in ${market || effectiveConditionId} (spent $${spent.toFixed(2)}). Skipping.`);
             return;
         }
-        logger.info(`Adding to existing outcome position (spent $${spent.toFixed(2)} / $${config.maxPositionSize})`);
+        logger.info(`[${source}] Adding to existing outcome position (spent $${spent.toFixed(2)} / $${config.maxPositionSize})`);
     }
 
     // Calculate our trade size (independent of individual fill event)
@@ -244,21 +253,21 @@ async function _doExecuteBuy(trade, marketOpts, effectiveConditionId, positionKe
     const CLOB_MIN_ORDER_USDC = 1;
     const effectiveMin = Math.max(config.minTradeSize, CLOB_MIN_ORDER_USDC);
     if (tradeSize < effectiveMin) {
-        logger.warn(`Trade size $${tradeSize.toFixed(2)} below $${effectiveMin} minimum — skipping buy`);
+        logger.warn(`[${source}] Trade size $${tradeSize.toFixed(2)} below $${effectiveMin} minimum — skipping buy`);
         return;
     }
 
     // Check balance
     const balance = config.dryRun ? getPaperBalance() : await getUsdcBalance();
     if (balance < tradeSize) {
-        logger.error(`Insufficient balance: $${balance.toFixed(2)} < $${tradeSize.toFixed(2)} needed`);
+        logger.error(`[${source}] Insufficient balance: $${balance.toFixed(2)} < $${tradeSize.toFixed(2)} needed`);
         return;
     }
 
-    logger.trade(`BUY ${market || tokenId} | Size: $${tradeSize.toFixed(2)} | Trader price: ${price}`);
+    logger.trade(`[${source}] BUY ${market || tokenId} | Size: $${tradeSize.toFixed(2)} | Trader price: ${price}`);
 
     if (config.dryRun) {
-        logger.trade(`[SIM] BUY ${market || tokenId} | $${tradeSize.toFixed(2)} @ $${price} | outcome: ${trade.outcome || '?'}`);
+        logger.trade(`[${source}] [SIM] BUY ${market || tokenId} | $${tradeSize.toFixed(2)} @ $${price} | outcome: ${trade.outcome || '?'}`);
         reservePaperBalance(tradeSize);
         const dryShares = tradeSize / price;
         if (existingPos) {
@@ -274,6 +283,8 @@ async function _doExecuteBuy(trade, marketOpts, effectiveConditionId, positionKe
             addPosition({
                 conditionId: effectiveConditionId,
                 tokenId,
+                traderAddress: trade.traderAddress,
+                traderLabel: trade.traderLabel,
                 market: market || marketOpts.question || tokenId,
                 shares: dryShares,
                 avgBuyPrice: price,
@@ -375,11 +386,13 @@ async function _doExecuteBuy(trade, marketOpts, effectiveConditionId, positionKe
         logger.info(buildCopyOpenLatencyLog(trade, new Date()));
     } else {
         // New position
-        addPosition({
-            conditionId: effectiveConditionId,
-            tokenId,
-            market: market || marketOpts.question || tokenId,
-            shares: totalSharesFilled,
+            addPosition({
+                conditionId: effectiveConditionId,
+                tokenId,
+                traderAddress: trade.traderAddress,
+                traderLabel: trade.traderLabel,
+                market: market || marketOpts.question || tokenId,
+                shares: totalSharesFilled,
             avgBuyPrice: fillAvgPrice,
             totalCost: totalCostFilled,
             outcome: trade.outcome,
@@ -406,6 +419,7 @@ async function _doExecuteBuy(trade, marketOpts, effectiveConditionId, positionKe
  */
 export async function executeSell(trade) {
     const { tokenId, conditionId, market, price } = trade;
+    const source = tradeSourceLabel(trade);
 
     // Get market options to resolve conditionId
     let effectiveConditionId = conditionId;
@@ -415,21 +429,21 @@ export async function executeSell(trade) {
         effectiveConditionId = marketOpts.conditionId;
     }
 
-    const positionRef = { tokenId, conditionId: effectiveConditionId };
+    const positionRef = { tokenId, conditionId: effectiveConditionId, traderAddress: trade.traderAddress };
 
     // Check if we have a position for this concrete outcome token.
     const position = getPosition(positionRef);
     if (!position) {
-        logger.warn(`No position found for ${trade.outcome || tokenId} in ${market || effectiveConditionId}. Skipping sell.`);
+        logger.warn(`[${source}] No position found for ${trade.outcome || tokenId} in ${market || effectiveConditionId}. Skipping sell.`);
         return;
     }
 
     if (position.status === 'selling' || position.status === 'sold') {
-        logger.warn(`Position already ${position.status}: ${market || effectiveConditionId}. Skipping.`);
+        logger.warn(`[${source}] Position already ${position.status}: ${market || effectiveConditionId}. Skipping.`);
         return;
     }
 
-    logger.trade(`SELL ${position.market} | Shares: ${position.shares} | Trader price: ${price}`);
+    logger.trade(`[${source}] SELL ${position.market} | Shares: ${position.shares} | Trader price: ${price}`);
 
     if (config.dryRun) {
         logger.info('[DRY RUN] Would place sell order');
@@ -463,7 +477,7 @@ export async function executeSell(trade) {
                 await new Promise((r) => setTimeout(r, 600));
             } catch { /* ignore */ }
         }
-        logger.warn(`Could not fetch open orders to cancel: ${err.message}`);
+        logger.warn(`[${source}] Could not fetch open orders to cancel: ${err.message}`);
     }
 
     updatePosition(positionRef, { status: 'selling' });
@@ -485,12 +499,12 @@ export async function executeSell(trade) {
     let sharesToSell = position.shares;
     if (onChain !== null) {
         if (onChain < 0.0001) {
-            logger.warn(`On-chain balance is 0 for ${position.market} — position already sold or redeemed`);
+            logger.warn(`[${source}] On-chain balance is 0 for ${position.market} — position already sold or redeemed`);
             removePosition(positionRef);
             return;
         }
         if (onChain < sharesToSell) {
-            logger.info(`Adjusting sell amount: stored ${sharesToSell.toFixed(6)} → on-chain ${onChain.toFixed(6)} shares`);
+            logger.info(`[${source}] Adjusting sell amount: stored ${sharesToSell.toFixed(6)} -> on-chain ${onChain.toFixed(6)} shares`);
             sharesToSell = onChain;
         }
     }
@@ -503,7 +517,7 @@ export async function executeSell(trade) {
         try {
             if (config.sellMode === 'market') {
                 // Market sell (FAK) — takes what's available at 2% slippage
-                logger.info(`Sell attempt ${attempt}/${config.maxRetries} (market) | Shares: ${sharesToSell}`);
+                logger.info(`[${source}] Sell attempt ${attempt}/${config.maxRetries} (market) | Shares: ${sharesToSell}`);
 
                 const response = await client.createAndPostMarketOrder(
                     {
@@ -523,18 +537,18 @@ export async function executeSell(trade) {
                 if (response && response.success) {
                     const { sellShares: sharesFilled } = parseOrderFill(response);
                     if (sharesFilled > 0) {
-                        logger.success(`Sell filled: ${response.orderID} | ${sharesFilled.toFixed(4)} shares`);
+                        logger.success(`[${source}] Sell filled: ${response.orderID} | ${sharesFilled.toFixed(4)} shares`);
                         filled = true;
                         break;
                     } else {
-                        logger.warn(`No bid liquidity — FAK filled 0 shares (attempt ${attempt})`);
+                        logger.warn(`[${source}] No bid liquidity — FAK filled 0 shares (attempt ${attempt})`);
                     }
                 } else {
-                    logger.warn(`Sell rejected: ${clobRejectReason(response)}`);
+                    logger.warn(`[${source}] Sell rejected: ${clobRejectReason(response)}`);
                 }
             } else {
                 // Limit sell at trader's sell price
-                logger.info(`Sell attempt ${attempt}/${config.maxRetries} (limit) | Price: ${price}`);
+                logger.info(`[${source}] Sell attempt ${attempt}/${config.maxRetries} (limit) | Price: ${price}`);
 
                 const response = await client.createAndPostOrder(
                     {
@@ -551,15 +565,15 @@ export async function executeSell(trade) {
                 );
 
                 if (response && response.success) {
-                    logger.success(`Limit sell placed: ${response.orderID} @ $${price}`);
+                    logger.success(`[${source}] Limit sell placed: ${response.orderID} @ $${price}`);
                     filled = true;
                     break;
                 } else {
-                    logger.warn(`Limit sell failed: ${clobRejectReason(response)}`);
+                    logger.warn(`[${source}] Limit sell failed: ${clobRejectReason(response)}`);
                 }
             }
         } catch (err) {
-            logger.error(`Sell attempt ${attempt} failed:`, err.message);
+            logger.error(`[${source}] Sell attempt ${attempt} failed:`, err.message);
         }
 
         if (attempt < config.maxRetries) {
@@ -569,9 +583,9 @@ export async function executeSell(trade) {
 
     if (filled) {
         removePosition(positionRef);
-        logger.money(`Position sold: ${position.market}`);
+        logger.money(`[${source}] Position sold: ${position.market}`);
     } else {
         updatePosition(positionRef, { status: 'open' });
-        logger.error(`Failed to sell ${position.market} after ${config.maxRetries} attempts`);
+        logger.error(`[${source}] Failed to sell ${position.market} after ${config.maxRetries} attempts`);
     }
 }

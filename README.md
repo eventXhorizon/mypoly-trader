@@ -49,16 +49,19 @@ CURRENT_MARKET_MAX_ODDS=0.70 # Skip if market is more skewed than this
 
 ### 2. Copy Trader (`npm run bot`)
 
-Mirrors the trades of any target Polymarket wallet in real-time.
+Mirrors trades from one or more target Polymarket wallets in real time.
 
-- Monitors target wallet for new BUY/SELL activity via the CLOB API
+- Monitors target wallets for new BUY/SELL activity via the live data WebSocket
 - Uses Polymarket CLOB V2 for live copy-trading orders; live funds must be available as pUSD on the configured proxy/deposit wallet
 - Replicates trades proportionally using configurable sizing modes (`balance` or `percentage`)
+- Tags logs and positions with the source wallet label when multiple targets are configured
 - Supports automatic sell-out when target trader exits (market or limit)
 - Auto-redeems resolved positions
 
 ```
 TRADER_ADDRESS=0xTARGET_WALLET
+TRADER_ADDRESSES=0xTARGET_WALLET_1,0xTARGET_WALLET_2
+TRADER_WALLET_LABELS=0xTARGET_WALLET_1=W1,0xTARGET_WALLET_2=W2
 SIZE_MODE=balance
 SIZE_PERCENT=10
 MAX_POSITION_SIZE=10

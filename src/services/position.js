@@ -22,6 +22,12 @@ export function positionKeyFor({ tokenId, conditionId } = {}) {
     return tokenId || conditionId || '';
 }
 
+export function sourcePositionKeyFor({ tokenId, conditionId, traderAddress } = {}) {
+    const baseKey = positionKeyFor({ tokenId, conditionId });
+    const source = String(traderAddress || '').trim().toLowerCase();
+    return source && baseKey ? `${source}:${baseKey}` : baseKey;
+}
+
 function legacyConditionMatches(position, keyOrTrade) {
     if (!position || typeof keyOrTrade !== 'object') return false;
     if (!keyOrTrade.conditionId || position.conditionId !== keyOrTrade.conditionId) return false;
@@ -30,6 +36,11 @@ function legacyConditionMatches(position, keyOrTrade) {
 
 function positionMatches(position, keyOrTrade) {
     if (!position || typeof keyOrTrade !== 'object') return false;
+    if (keyOrTrade.traderAddress) {
+        const requestedTrader = String(keyOrTrade.traderAddress).toLowerCase();
+        const positionTrader = String(position.traderAddress || '').toLowerCase();
+        if (positionTrader && positionTrader !== requestedTrader) return false;
+    }
     if (keyOrTrade.tokenId && position.tokenId) return position.tokenId === keyOrTrade.tokenId;
     return legacyConditionMatches(position, keyOrTrade);
 }
@@ -46,9 +57,14 @@ function findPositionEntry(keyOrTrade) {
         };
     }
 
-    const primaryKey = positionKeyFor(keyOrTrade);
+    const primaryKey = sourcePositionKeyFor(keyOrTrade);
     if (primaryKey && positions[primaryKey]) {
         return { positions, key: primaryKey, position: positions[primaryKey] };
+    }
+
+    const tokenKey = positionKeyFor(keyOrTrade);
+    if (tokenKey && positions[tokenKey] && positionMatches(positions[tokenKey], keyOrTrade)) {
+        return { positions, key: tokenKey, position: positions[tokenKey] };
     }
 
     // Legacy compatibility: older versions stored positions under conditionId.
@@ -93,6 +109,8 @@ export function hasPosition(keyOrTrade) {
 export function addPosition({
     conditionId,
     tokenId,
+    traderAddress,
+    traderLabel,
     market,
     shares,
     avgBuyPrice,
@@ -101,11 +119,13 @@ export function addPosition({
     sellOrderId,
 }) {
     const positions = getPositions();
-    const positionKey = positionKeyFor({ tokenId, conditionId });
+    const positionKey = sourcePositionKeyFor({ tokenId, conditionId, traderAddress });
     positions[positionKey] = {
         positionKey,
         conditionId,
         tokenId,
+        traderAddress: traderAddress || '',
+        traderLabel: traderLabel || '',
         market,
         shares,
         avgBuyPrice,
@@ -129,7 +149,7 @@ export function updatePosition(keyOrTrade, updates) {
     const { positions, key, position: existing } = findPositionEntry(keyOrTrade);
     if (existing && key) {
         const next = { ...existing, ...updates };
-        const nextKey = positionKeyFor(next) || key;
+        const nextKey = sourcePositionKeyFor(next) || key;
         if (nextKey !== key) delete positions[key];
         positions[nextKey] = {
             ...existing,

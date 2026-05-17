@@ -16,6 +16,15 @@ let reconnectDelay = INITIAL_RECONNECT_DELAY;
 let tradeHandler = null;
 let isShuttingDown = false;
 
+function shortAddr(addr) {
+    return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+}
+
+function traderLabel(address) {
+    const normalized = String(address || '').toLowerCase();
+    return config.traderDisplayMap?.[normalized] || shortAddr(normalized);
+}
+
 function getProcessedIds() {
     return readState(PROCESSED_FILE, { tradeIds: [] });
 }
@@ -55,15 +64,13 @@ function handleMessage(rawData) {
     const payload = msg.payload;
     if (!payload) return;
 
-    // Filter by target trader's address (case-insensitive)
-    const traderAddr = config.traderAddress.toLowerCase();
     const proxyWallet = (payload.proxyWallet || payload.proxy_wallet || '').toLowerCase();
-
-    if (!proxyWallet || proxyWallet !== traderAddr) return;
+    const watched = config.traderAddresses.includes(proxyWallet);
+    if (!proxyWallet || !watched) return;
 
     // Build trade ID
     const tradeId = payload.transactionHash || payload.transaction_hash ||
-        `${payload.timestamp}_${payload.asset}`;
+        `${proxyWallet}_${payload.timestamp}_${payload.asset}_${payload.side}`;
 
     // Deduplication
     if (!markProcessed(tradeId)) {
@@ -95,11 +102,13 @@ function handleMessage(rawData) {
         side: type,
         timestamp: payload.timestamp || new Date().toISOString(),
         outcome: payload.outcome || '',
-        proxyWalletAddress: payload.proxyWallet || '',
+        traderAddress: proxyWallet,
+        traderLabel: traderLabel(proxyWallet),
+        proxyWalletAddress: payload.proxyWallet || proxyWallet,
     };
 
-    logger.watch(`Trade detected! ${type} - ${trade.market || trade.tokenId}`);
-    logger.watch(`  Size: ${trade.size} shares @ $${trade.price}`);
+    logger.watch(`[${trade.traderLabel}] Trade detected! ${type} - ${trade.market || trade.tokenId}`);
+    logger.watch(`[${trade.traderLabel}] Size: ${trade.size} shares @ $${trade.price}`);
 
     if (tradeHandler) {
         tradeHandler(trade).catch((err) => {
@@ -158,7 +167,7 @@ function connect() {
 
     ws.on('open', () => {
         logger.success('WebSocket connected! Subscribing to activity feed...');
-        logger.watch(`Watching trader: ${config.traderAddress}`);
+        logger.watch(`Watching ${config.traderAddresses.length} trader(s): ${config.traderAddresses.map(traderLabel).join(', ')}`);
         reconnectDelay = INITIAL_RECONNECT_DELAY;
 
         ws.send(JSON.stringify({

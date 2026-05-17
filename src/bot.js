@@ -18,10 +18,17 @@ import logger from './utils/logger.js';
 
 config.dashboardMode = 'copy-bot';
 config.dashboardTitle = 'Polymarket Copy Bot';
-config.dashboardSubtitle = config.dryRun ? 'single-wallet simulation' : 'single-wallet live trading';
+config.dashboardSubtitle = config.dryRun ? 'copy simulation' : 'live copy trading';
 
 logger.setOutput(appendWebLog);
 logger.interceptConsole(); // strip auth headers from CLOB axios error dumps
+
+function sourceLabelForPosition(pos) {
+    if (pos.traderLabel && pos.traderAddress) return `${pos.traderLabel} ${pos.traderAddress.slice(0, 6)}...${pos.traderAddress.slice(-4)}`;
+    if (pos.traderLabel) return pos.traderLabel;
+    if (pos.traderAddress) return `${pos.traderAddress.slice(0, 6)}...${pos.traderAddress.slice(-4)}`;
+    return 'legacy';
+}
 
 function positionAccount(balance, positions) {
     const openCost = positions.reduce((sum, pos) => sum + (pos.totalCost || 0), 0);
@@ -89,8 +96,9 @@ async function printStatus() {
             } catch { /* price unavailable */ }
 
             const name = (pos.market || pos.tokenId || '').substring(0, 50);
+            const source = sourceLabelForPosition(pos);
             logger.info(
-                `  [${pos.outcome || '?'}] ${name}` +
+                `  [${source}] [${pos.outcome || '?'}] ${name}` +
                 ` | ${pos.shares.toFixed(4)} sh @ $${pos.avgBuyPrice.toFixed(4)}` +
                 ` | spent $${(pos.totalCost || 0).toFixed(2)}${pnlStr}`,
             );
@@ -141,7 +149,7 @@ async function main() {
 
     const mode = config.dryRun ? 'SIMULATION' : 'LIVE TRADING';
     logger.info(`=== Polymarket Copy Trade [${mode}] ===`);
-    logger.info(`Trader       : ${config.traderAddress}`);
+    logger.info(`Traders      : ${config.traderAddresses.map((addr) => config.traderDisplayMap[addr] || addr).join(', ')}`);
     logger.info(`Proxy wallet : ${config.proxyWallet}`);
     logger.info(`Size mode    : ${config.sizeMode} (${config.sizePercent}%)`);
     logger.info(`Min trade    : $${config.minTradeSize}`);
