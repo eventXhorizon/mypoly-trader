@@ -64,6 +64,8 @@ SIZE_PERCENT=10
 MAX_POSITION_SIZE=10
 ```
 
+`MAX_POSITION_SIZE` is enforced per tracked wallet and per concrete outcome/token, not per whole topic. If a topic has multiple outcomes, each outcome has its own cap.
+
 ---
 
 ### 3. Orderbook Sniper (`npm run sniper`)
