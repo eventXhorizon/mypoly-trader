@@ -117,6 +117,48 @@ export async function initWalletAnalyticsDb(logger = console) {
             on market_price_snapshots (token_id, captured_at desc);
         `);
         await pool.query(`
+            create table if not exists wallet_trade_clv (
+                trade_id text primary key references wallet_historical_trades(id) on delete cascade,
+                wallet_address text not null references wallet_candidates(address) on delete cascade,
+                token_id text not null,
+                side text not null check (side in ('BUY', 'SELL')),
+                entry_price numeric(18, 8) not null,
+                future_price numeric(18, 8),
+                clv numeric(18, 8),
+                clv_window_minutes integer not null,
+                price_timestamp timestamptz,
+                source text not null default 'clob_prices_history',
+                status text not null default 'unknown',
+                raw_observation jsonb not null default '{}'::jsonb,
+                updated_at timestamptz not null default now()
+            );
+        `);
+        await pool.query(`
+            create index if not exists idx_wallet_trade_clv_wallet
+            on wallet_trade_clv (wallet_address, updated_at desc);
+        `);
+        await pool.query(`
+            create table if not exists wallet_trade_liquidity (
+                trade_id text primary key references wallet_historical_trades(id) on delete cascade,
+                wallet_address text not null references wallet_candidates(address) on delete cascade,
+                token_id text not null,
+                side text not null check (side in ('BUY', 'SELL')),
+                target_notional numeric(18, 8) not null,
+                target_price numeric(18, 8) not null,
+                estimated_avg_price numeric(18, 8),
+                estimated_slippage numeric(18, 8),
+                fillable boolean not null default false,
+                snapshot_at timestamptz not null default now(),
+                source text not null default 'clob_current_book',
+                status text not null default 'unknown',
+                raw_snapshot jsonb not null default '{}'::jsonb
+            );
+        `);
+        await pool.query(`
+            create index if not exists idx_wallet_trade_liquidity_wallet
+            on wallet_trade_liquidity (wallet_address, snapshot_at desc);
+        `);
+        await pool.query(`
             create table if not exists wallet_scores (
                 wallet_address text primary key references wallet_candidates(address) on delete cascade,
                 score numeric(10, 4) not null default 0,

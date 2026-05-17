@@ -2,6 +2,7 @@ import config, { validateWalletAnalyticsConfig } from './config/index.js';
 import logger from './utils/logger.js';
 import { setupAxiosProxy } from './utils/proxy.js';
 import { backfillWallet } from './services/walletBackfill.js';
+import { analyzeWalletMarketData } from './services/walletMarketData.js';
 import {
     closeWalletAnalyticsDb,
     initWalletAnalyticsDb,
@@ -15,7 +16,7 @@ function usage() {
         '  npm run wallet-score -- --top 20',
         '',
         'This command reads public Polymarket data, writes local Postgres analytics tables,',
-        'and prints a stage1a score. It never places orders.',
+        'and prints a stage1b score. It never places orders.',
     ].join('\n');
 }
 
@@ -69,10 +70,11 @@ async function main() {
             process.exit(1);
         }
 
-        logger.info(`Wallet analytics limits: trades=${config.walletAnalyticsTradeLimit}, closed_positions=${config.walletAnalyticsClosedPositionLimit}`);
+        logger.info(`Wallet analytics limits: trades=${config.walletAnalyticsTradeLimit}, closed_positions=${config.walletAnalyticsClosedPositionLimit}, clv=${config.walletAnalyticsClvLimit}`);
         const backfill = await backfillWallet(args.wallet, logger);
+        const marketData = await analyzeWalletMarketData(args.wallet, logger);
         const score = await scoreWallet(args.wallet, logger);
-        process.stdout.write(`${JSON.stringify({ backfill, score }, null, 2)}\n`);
+        process.stdout.write(`${JSON.stringify({ backfill, marketData, score }, null, 2)}\n`);
     } finally {
         await closeWalletAnalyticsDb();
     }

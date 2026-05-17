@@ -20,6 +20,8 @@
 - Live copy should remain gated; scoring output must not automatically trigger real orders.
 - Stage 1A closed-position field normalization is best-effort because Data API payloads can vary; real wallet samples must be checked before relying on scores.
 - Stage 1A `provisionalEligible` must not be treated as final eligibility because CLV and copy-slippage are still unknown.
+- Stage 1B `copySlippageEstimate` is based on the current orderbook, not the historical orderbook at target fill time.
+- Stage 1B CLV depends on CLOB price history availability and fidelity; missing price history should reduce confidence rather than count as neutral.
 
 ## Operational risks
 

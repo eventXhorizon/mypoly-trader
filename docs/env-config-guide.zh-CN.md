@@ -49,9 +49,14 @@ WALLET_ANALYTICS_MIN_SETTLED_MARKETS=30
 WALLET_ANALYTICS_MIN_PROFIT_FACTOR=1.2
 WALLET_ANALYTICS_MAX_DRAWDOWN=0.30
 WALLET_ANALYTICS_MAX_TOP_MARKET_PROFIT_SHARE=0.40
+WALLET_ANALYTICS_ENABLE_CLV=true
+WALLET_ANALYTICS_CLV_LIMIT=80
+WALLET_ANALYTICS_CLV_WINDOW_MINUTES=30
+WALLET_ANALYTICS_PRICE_HISTORY_FIDELITY=5
+WALLET_ANALYTICS_ORDERBOOK_LIMIT=40
 ```
 
-注意：当前评分是 `stage1a`，暂时还没有接入 CLV 和真实跟单滑点。输出里的 `provisionalEligible=true` 只表示值得进入下一步验证，不表示可以实盘跟单。
+注意：当前评分是 `stage1b`。CLV 使用 CLOB 历史价格估算，滑点使用当前 orderbook 估算，因此仍然只是候选筛选，不等于实盘跟单结论。输出里的 `eligible=true` 只表示可以进入 4-8 周 paper follow，不表示可以直接实盘跟单。
 
 ## 实盘跟单最小配置
 

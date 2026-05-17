@@ -44,6 +44,11 @@ const config = {
   walletAnalyticsMinProfitFactor: parseFloat(process.env.WALLET_ANALYTICS_MIN_PROFIT_FACTOR || '1.2'),
   walletAnalyticsMaxDrawdown: parseFloat(process.env.WALLET_ANALYTICS_MAX_DRAWDOWN || '0.30'),
   walletAnalyticsMaxTopMarketProfitShare: parseFloat(process.env.WALLET_ANALYTICS_MAX_TOP_MARKET_PROFIT_SHARE || '0.40'),
+  walletAnalyticsEnableClv: process.env.WALLET_ANALYTICS_ENABLE_CLV !== 'false',
+  walletAnalyticsClvLimit: parseInt(process.env.WALLET_ANALYTICS_CLV_LIMIT || '80', 10),
+  walletAnalyticsClvWindowMinutes: parseInt(process.env.WALLET_ANALYTICS_CLV_WINDOW_MINUTES || '30', 10),
+  walletAnalyticsPriceHistoryFidelity: parseInt(process.env.WALLET_ANALYTICS_PRICE_HISTORY_FIDELITY || '5', 10),
+  walletAnalyticsOrderbookLimit: parseInt(process.env.WALLET_ANALYTICS_ORDERBOOK_LIMIT || '40', 10),
 
   // Trade sizing
   sizeMode: process.env.SIZE_MODE || 'percentage', // "percentage" | "balance"
@@ -264,6 +269,18 @@ export function validateWalletAnalyticsConfig() {
   }
   if (config.walletAnalyticsMaxTopMarketProfitShare <= 0 || config.walletAnalyticsMaxTopMarketProfitShare > 1) {
     throw new Error('WALLET_ANALYTICS_MAX_TOP_MARKET_PROFIT_SHARE must be between 0 and 1');
+  }
+  if (!Number.isInteger(config.walletAnalyticsClvLimit) || config.walletAnalyticsClvLimit <= 0) {
+    throw new Error('WALLET_ANALYTICS_CLV_LIMIT must be a positive integer');
+  }
+  if (!Number.isInteger(config.walletAnalyticsClvWindowMinutes) || config.walletAnalyticsClvWindowMinutes <= 0) {
+    throw new Error('WALLET_ANALYTICS_CLV_WINDOW_MINUTES must be a positive integer');
+  }
+  if (!Number.isInteger(config.walletAnalyticsPriceHistoryFidelity) || config.walletAnalyticsPriceHistoryFidelity <= 0) {
+    throw new Error('WALLET_ANALYTICS_PRICE_HISTORY_FIDELITY must be a positive integer');
+  }
+  if (!Number.isInteger(config.walletAnalyticsOrderbookLimit) || config.walletAnalyticsOrderbookLimit <= 0) {
+    throw new Error('WALLET_ANALYTICS_ORDERBOOK_LIMIT must be a positive integer');
   }
 }
 

@@ -285,9 +285,9 @@ Rust worker 只负责分析和写库，不直接下单。
 8. 连续记录 4-8 周 paper 结果。
 9. 根据 paper 结果决定是否进入小资金实盘灰度。
 
-## 当前实现状态：Stage 1A
+## 当前实现状态：Stage 1B
 
-Stage 1A 已提供一个最小可运行的地址评分入口：
+Stage 1B 已提供一个最小可运行的地址评分入口：
 
 ```bash
 npm run db:up
@@ -311,7 +311,7 @@ npm run wallet-score -- --top 20
 - 不初始化 CLOB 下单 client。
 - 不提交真实订单。
 
-Stage 1A 已计算：
+Stage 1B 已计算：
 
 - `tradeCount`
 - `tradedMarketCount`
@@ -326,29 +326,39 @@ Stage 1A 已计算：
 - `maxDrawdownRatio`
 - `topMarketProfitShare`
 - `tradesPerDay`
-
-Stage 1A 暂时不计算：
-
 - `weightedClv`
+- `averageClv`
+- `clvSampleCount`
 - `copySlippageEstimate`
-- 成交后 5 秒、30 秒、60 秒真实可成交价格。
-- orderbook depth。
+- `liquiditySampleCount`
+- `fillableRate`
 
-因此 Stage 1A 输出中：
+Stage 1B 的 CLV 使用 CLOB `/prices-history`：
 
 ```text
-eligible = false
+BUY  CLV = future_price - entry_price
+SELL CLV = entry_price - future_price
 ```
 
-即使其他指标通过，也只会标记：
+默认窗口是成交后 30 分钟。`copySlippageEstimate` 使用当前 CLOB `/book` 估算目标 notional 在当前盘口下的平均成交价差。它是可复制性的近似指标，不是历史成交当秒的真实盘口滑点。
+
+Stage 1B 输出中：
+
+```text
+eligible = true
+```
+
+必须同时满足：
 
 ```text
 provisionalEligible = true
+weightedClv > 0
+copySlippageEstimate <= max(0.01, weightedClv * 50%)
 ```
 
-这表示“值得进入下一步 CLV/滑点验证”，不是“可以实盘跟单”。
+如果 CLV 或盘口估算样本不足，`eligible` 仍然为 `false`。即使 `eligible=true`，它也只表示“可以进入 4-8 周 paper follow”，不是可以直接实盘跟单。
 
-### Stage 1A 表结构
+### Stage 1B 表结构
 
 当前新增的 Postgres 表：
 
@@ -358,9 +368,11 @@ provisionalEligible = true
 | `wallet_historical_trades` | 标准化后的历史交易 |
 | `wallet_closed_positions` | 标准化后的已关闭仓位 |
 | `market_price_snapshots` | 预留给后续 CLOB midpoint/spread/depth 快照 |
+| `wallet_trade_clv` | 每笔交易的历史 CLV 观察值 |
+| `wallet_trade_liquidity` | 每笔交易用当前盘口估算的可复制性 |
 | `wallet_scores` | 地址评分结果、指标和原因码 |
 
-### Stage 1A 配置项
+### Stage 1B 配置项
 
 可以通过 `.env` 调整：
 
@@ -375,6 +387,11 @@ WALLET_ANALYTICS_MIN_SETTLED_MARKETS=30
 WALLET_ANALYTICS_MIN_PROFIT_FACTOR=1.2
 WALLET_ANALYTICS_MAX_DRAWDOWN=0.30
 WALLET_ANALYTICS_MAX_TOP_MARKET_PROFIT_SHARE=0.40
+WALLET_ANALYTICS_ENABLE_CLV=true
+WALLET_ANALYTICS_CLV_LIMIT=80
+WALLET_ANALYTICS_CLV_WINDOW_MINUTES=30
+WALLET_ANALYTICS_PRICE_HISTORY_FIDELITY=5
+WALLET_ANALYTICS_ORDERBOOK_LIMIT=40
 ```
 
 ## 当前不做的事
