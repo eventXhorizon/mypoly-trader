@@ -186,3 +186,20 @@ Validation performed:
 Known unverified:
 
 - Did not restart VPS Docker services from this local session.
+
+## 2026-05-17 Same-Port Multi-Watch Tab Entry
+
+Changed:
+
+- Removed the header `Multi-Watch` cross-port link from the shared Web dashboard.
+- Renamed the read-only Targets tab to `Multi-Watch`.
+- The `Live / Multi-Watch` navigation now switches views inside the same page and same port.
+
+Validation performed:
+
+- `node --check src/ui/webDashboard.js`
+- `rg "dashboardNav|sameHostUrl|configureDashboardNav|target=\"_blank\"|Multi-Watch</a>" -n src/ui/webDashboard.js` returned no matches.
+
+Known unverified:
+
+- Browser visual rendering has not been screenshot-tested.

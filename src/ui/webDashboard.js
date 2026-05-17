@@ -429,20 +429,6 @@ function html() {
       flex-wrap: wrap;
       justify-content: flex-end;
     }
-    .nav-link {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      height: 30px;
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      background: var(--button-bg);
-      color: var(--text);
-      text-decoration: none;
-      padding: 0 10px;
-      white-space: nowrap;
-    }
-    .nav-link:hover { border-color: var(--button-hover); }
     .dot {
       width: 8px;
       height: 8px;
@@ -787,14 +773,13 @@ function html() {
       <div id="subtitle" class="subtle">simulation dashboard</div>
     </div>
     <div class="header-tools">
-      <a id="dashboardNav" class="nav-link" href="#" target="_blank" rel="noopener">Multi-Watch</a>
       <button id="themeToggle" type="button">Theme</button>
       <div class="status"><span id="dot" class="dot"></span><span id="status">connecting</span></div>
     </div>
   </header>
   <nav class="tabs" aria-label="Dashboard tabs">
     <button id="liveTabButton" class="tab-button active" type="button">Live</button>
-    <button id="targetsTabButton" class="tab-button" type="button">Targets</button>
+    <button id="targetsTabButton" class="tab-button" type="button">Multi-Watch</button>
   </nav>
   <main id="livePage">
     <section>
@@ -894,14 +879,14 @@ function html() {
   <main id="targetsPage" class="targets-page" hidden>
     <section>
       <div id="targetSummary" class="metrics">
-        <div class="metric"><div class="label">Targets</div><div class="value">0</div></div>
+        <div class="metric"><div class="label">Target Wallets</div><div class="value">0</div></div>
         <div class="metric"><div class="label">Paper Realized</div><div class="value">$0.00</div></div>
         <div class="metric"><div class="label">Paper Trades</div><div class="value">0</div></div>
         <div class="metric"><div class="label">Paper-Ready</div><div class="value">0</div></div>
       </div>
       <div class="panel">
         <div class="panel-title">
-          <span>Target Wallets</span>
+          <span>Multi-Watch Targets</span>
           <span id="targetStatus" class="small"></span>
         </div>
         <div id="targetWalletsList" class="panel-body target-list"><div class="empty">Waiting for target report...</div></div>
@@ -940,7 +925,6 @@ function html() {
       analyticsStatus: document.getElementById('analyticsStatus'),
       logList: document.getElementById('logList'),
       themeToggle: document.getElementById('themeToggle'),
-      dashboardNav: document.getElementById('dashboardNav'),
       toggleScroll: document.getElementById('toggleScroll'),
       clearLogs: document.getElementById('clearLogs'),
       liveTabButton: document.getElementById('liveTabButton'),
@@ -1084,7 +1068,6 @@ function html() {
       els.settings.textContent = sizingText;
       els.updatedAt.textContent = state.updatedAt ? new Date(state.updatedAt).toLocaleTimeString() : '';
       const isMultiWatch = cfg.mode === 'multi-watch';
-      configureDashboardNav(cfg, isMultiWatch);
       els.settingsForm.closest('.panel').hidden = !isMultiWatch;
       els.ledger.closest('.panel').hidden = !isMultiWatch;
       els.analyticsPanel.hidden = !isMultiWatch;
@@ -1128,25 +1111,6 @@ function html() {
       els.targetsPage.hidden = activeTab !== 'targets';
       els.liveTabButton.classList.toggle('active', activeTab === 'live');
       els.targetsTabButton.classList.toggle('active', activeTab === 'targets');
-    }
-
-    function sameHostUrl(port) {
-      const url = new URL(window.location.href);
-      url.port = String(port);
-      url.pathname = '/';
-      url.search = '';
-      url.hash = '';
-      return url.toString();
-    }
-
-    function configureDashboardNav(cfg, isMultiWatch) {
-      if (isMultiWatch) {
-        els.dashboardNav.textContent = 'Live Bot';
-        els.dashboardNav.href = cfg.liveDashboardUrl || sameHostUrl(8788);
-        return;
-      }
-      els.dashboardNav.textContent = 'Multi-Watch';
-      els.dashboardNav.href = cfg.multiWatchDashboardUrl || sameHostUrl(8787);
     }
 
     function renderWallet(account) {
@@ -1281,7 +1245,7 @@ function html() {
       const realizedClass = paperRealized >= 0 ? 'green' : 'red';
 
       els.targetSummary.innerHTML =
-        '<div class="metric"><div class="label">Targets</div><div class="value">' + wallets.length + '</div></div>' +
+        '<div class="metric"><div class="label">Target Wallets</div><div class="value">' + wallets.length + '</div></div>' +
         '<div class="metric"><div class="label">Paper Realized</div><div class="value ' + realizedClass + '">' + money(paperRealized, true) + '</div></div>' +
         '<div class="metric"><div class="label">Paper Trades</div><div class="value">' + paperTrades + '</div></div>' +
         '<div class="metric"><div class="label">Paper-Ready</div><div class="value">' + ready + '</div></div>';
