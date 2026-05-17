@@ -4,8 +4,7 @@ Date: 2026-05-17
 
 Current goal:
 
-- Implement Stage 1B of Polymarket wallet screening.
-- Stage 1B backfills a single wallet's public trades and closed positions, stores them in Postgres, enriches recent trades with CLOB price history/current orderbook estimates, and outputs a score.
+- Show target-wallet analytics and latest paper PnL in the Web dashboard without affecting live copy pages.
 
 Recent changes:
 
@@ -20,6 +19,9 @@ Recent changes:
 - `src/services/walletScorer.js`
 - `src/services/walletMarketData.js`
 - `src/wallet-score.js`
+- `src/ui/webDashboard.js`
+- `src/multi-watch.js`
+- `src/services/multiWsWatcher.js`
 
 Implementation status:
 
@@ -28,8 +30,11 @@ Implementation status:
 - The command does not initialize live CLOB order execution and does not place orders.
 - `eligible` can become true only when historical metrics, weighted CLV, and current orderbook copy-slippage checks all pass.
 - `eligible=true` means only "ready for 4-8 week paper follow", not "ready for live copy".
+- The Web dashboard now includes a `Wallet Analytics` panel only when `config.dashboardMode === 'multi-watch'`.
+- The live copy-bot dashboard does not query or display wallet analytics.
+- A multi-watch shutdown edge case was fixed by swallowing WebSocket errors after listeners are removed during cleanup.
 
 Recommended next implementation step:
 
-- Surface wallet scores in the Web dashboard after scoring output is stable.
 - Add real-time post-fill orderbook snapshots in multi-watch so paper follow can use actual observed copy prices rather than only current-book estimates.
+- Add a dashboard action to run/refresh `wallet-score` for selected targets from the UI if manual CLI refresh becomes inconvenient.

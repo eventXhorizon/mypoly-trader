@@ -35,3 +35,15 @@ Rationale:
 
 - Historical performance can be distorted by stale markets, one-off trades, survivorship bias, and uncopyable fills.
 - Paper follow validates the actual latency, spread, slippage, skipped-trade rate, and realized PnL of this system.
+
+## 2026-05-17: Dashboard analytics are multi-watch only
+
+Decision:
+
+- Show wallet analytics only on the `multi-watch` dashboard.
+- Do not attach analytics panels or analytics queries to the live copy-bot dashboard.
+
+Rationale:
+
+- The analytics workflow is candidate screening and paper follow validation.
+- Live copy pages should stay focused on real trading state and avoid accidental coupling to analysis tables.

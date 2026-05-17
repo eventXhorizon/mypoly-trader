@@ -4,6 +4,7 @@ import { appendWebLog, startWebDashboard, stopWebDashboard, updateWebDashboard }
 import { startMultiWsWatcher, stopMultiWsWatcher, updateWatchedTraders } from './services/multiWsWatcher.js';
 import { applyPaperTrade, ensureAccounts, portfolioSummary } from './services/paperPortfolio.js';
 import { closePnlLedger, initPnlLedger, recordPnlSnapshot, recordPnlTrade } from './services/pnlLedger.js';
+import { closeWalletAnalyticsDb, initWalletAnalyticsDb } from './services/walletAnalyticsDb.js';
 import { loadMultiWatchSettings, updateMultiWatchSettings } from './services/multiWatchSettings.js';
 import { buildCopyOpenLatencyLog } from './utils/tradeTiming.js';
 
@@ -68,10 +69,12 @@ async function main() {
     process.stdout.write(`Multi-watch web dashboard: http://${config.webHost}:${config.webPort}\n`);
     process.stdout.write('Simulation is running. Press Ctrl+C to stop.\n');
     const dbReady = await initPnlLedger(logger);
+    await initWalletAnalyticsDb(logger);
     if (config.multiWatchRequireDb && !dbReady) {
         logger.error('PnL database is required. Start Postgres and restart multi-watch.');
         stopWebDashboard();
         await closePnlLedger();
+        await closeWalletAnalyticsDb();
         process.exit(1);
     }
 
@@ -105,6 +108,7 @@ async function main() {
         clearInterval(snapshotInterval);
         await recordPnlSnapshot(portfolioSummary(), config, 'shutdown', logger);
         await closePnlLedger();
+        await closeWalletAnalyticsDb();
         setTimeout(() => process.exit(0), 300);
     };
 

@@ -1,5 +1,6 @@
 import config from '../config/index.js';
 import {
+    isWalletAnalyticsDbEnabled,
     markWalletScored,
     walletAnalyticsQuery,
 } from './walletAnalyticsDb.js';
@@ -354,4 +355,73 @@ export async function getTopWalletScores(limit = 20) {
         limit $1;
     `, [safeLimit]);
     return result.rows;
+}
+
+export async function getWalletAnalyticsReport(addresses = []) {
+    const normalizedAddresses = [...new Set(
+        addresses
+            .map((address) => String(address || '').trim().toLowerCase())
+            .filter((address) => /^0x[a-f0-9]{40}$/.test(address)),
+    )];
+
+    if (!isWalletAnalyticsDbEnabled()) {
+        return {
+            enabled: false,
+            wallets: normalizedAddresses.map((address) => ({ address, scored: false })),
+        };
+    }
+
+    if (normalizedAddresses.length === 0) {
+        return { enabled: true, wallets: [] };
+    }
+
+    const result = await walletAnalyticsQuery(`
+        select
+            c.address,
+            c.status,
+            c.source,
+            c.last_backfilled_at,
+            c.last_scored_at,
+            s.score::float8 as score,
+            s.eligible,
+            s.provisional_eligible,
+            s.stage,
+            s.reason_codes,
+            s.metrics,
+            s.scored_at
+        from wallet_candidates c
+        left join wallet_scores s on s.wallet_address = c.address
+        where c.address = any($1::text[])
+        order by array_position($1::text[], c.address);
+    `, [normalizedAddresses]);
+
+    const byAddress = new Map(result.rows.map((row) => [row.address, row]));
+    const wallets = normalizedAddresses.map((address) => {
+        const row = byAddress.get(address);
+        if (!row) {
+            return {
+                address,
+                scored: false,
+                status: 'not_backfilled',
+                reasonCodes: ['not_backfilled'],
+            };
+        }
+        return {
+            address,
+            scored: Boolean(row.scored_at),
+            status: row.status,
+            source: row.source,
+            score: row.score,
+            eligible: row.eligible,
+            provisionalEligible: row.provisional_eligible,
+            stage: row.stage,
+            reasonCodes: row.reason_codes || [],
+            metrics: row.metrics || {},
+            lastBackfilledAt: row.last_backfilled_at,
+            lastScoredAt: row.last_scored_at,
+            scoredAt: row.scored_at,
+        };
+    });
+
+    return { enabled: true, wallets };
 }

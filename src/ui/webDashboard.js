@@ -1,5 +1,6 @@
 import http from 'http';
 import { getPnlReport } from '../services/pnlLedger.js';
+import { getWalletAnalyticsReport } from '../services/walletScorer.js';
 
 const MAX_LOGS = 2000;
 const MAX_JSON_BODY_BYTES = 32 * 1024;
@@ -10,6 +11,7 @@ let currentState = {
     accounts: [],
     config: {},
     pnl: { enabled: false, summary: null, byWallet: [], trades: [], snapshots: [] },
+    analytics: { enabled: false, wallets: [] },
     updatedAt: new Date().toISOString(),
 };
 const logs = [];
@@ -125,11 +127,15 @@ async function setDashboardState(accounts, config) {
     const pnl = mode === 'multi-watch'
         ? await getPnlReport(config.pnlHistoryLimit)
         : { enabled: false, summary: null, byWallet: [], trades: [], snapshots: [] };
+    const analytics = mode === 'multi-watch'
+        ? await getWalletAnalyticsReport(config.traderAddresses || [])
+        : { enabled: false, wallets: [] };
     currentState = {
         accounts,
         config: publicConfig(config),
         totals: summarize(accounts, config),
         pnl,
+        analytics,
         updatedAt: new Date().toISOString(),
     };
 
@@ -487,6 +493,34 @@ function html() {
       border-bottom: 1px solid var(--row-line);
     }
     .trade-row:last-child { border-bottom: 0; }
+    .analytics-list {
+      display: grid;
+      gap: 8px;
+    }
+    .analytics-row {
+      display: grid;
+      grid-template-columns: minmax(190px, 1.4fr) repeat(6, minmax(78px, 0.7fr));
+      gap: 8px;
+      align-items: center;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      height: 22px;
+      padding: 0 7px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      font-size: 12px;
+      color: var(--muted);
+      background: var(--button-bg);
+      white-space: nowrap;
+    }
+    .badge.good { color: var(--green); border-color: color-mix(in srgb, var(--green) 42%, var(--line)); }
+    .badge.bad { color: var(--red); border-color: color-mix(in srgb, var(--red) 42%, var(--line)); }
     .logs {
       height: calc(100vh - 96px);
       min-height: 520px;
@@ -602,6 +636,7 @@ function html() {
       .wallet { grid-template-columns: 1fr 1fr; }
       .ledger-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .trade-row { grid-template-columns: 1fr; }
+      .analytics-row { grid-template-columns: 1fr 1fr; }
       .form-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     @media (max-width: 560px) {
@@ -610,6 +645,7 @@ function html() {
       .metrics { grid-template-columns: 1fr; }
       .wallet { grid-template-columns: 1fr; }
       .ledger-grid { grid-template-columns: 1fr; }
+      .analytics-row { grid-template-columns: 1fr; }
       .form-row { grid-template-columns: 1fr; }
     }
   </style>
@@ -697,6 +733,13 @@ function html() {
         </div>
         <div id="ledger" class="panel-body pnl-ledger"><div class="empty">Waiting for database...</div></div>
       </div>
+      <div class="panel" id="analyticsPanel">
+        <div class="panel-title">
+          <span>Wallet Analytics</span>
+          <span id="analyticsStatus" class="small"></span>
+        </div>
+        <div id="analytics" class="panel-body analytics-list"><div class="empty">Waiting for analytics...</div></div>
+      </div>
     </section>
     <section class="panel logs">
       <div class="panel-title">
@@ -735,6 +778,9 @@ function html() {
       updatedAt: document.getElementById('updatedAt'),
       ledger: document.getElementById('ledger'),
       ledgerStatus: document.getElementById('ledgerStatus'),
+      analyticsPanel: document.getElementById('analyticsPanel'),
+      analytics: document.getElementById('analytics'),
+      analyticsStatus: document.getElementById('analyticsStatus'),
       logList: document.getElementById('logList'),
       themeToggle: document.getElementById('themeToggle'),
       toggleScroll: document.getElementById('toggleScroll'),
@@ -861,6 +907,7 @@ function html() {
       const isMultiWatch = cfg.mode === 'multi-watch';
       els.settingsForm.closest('.panel').hidden = !isMultiWatch;
       els.ledger.closest('.panel').hidden = !isMultiWatch;
+      els.analyticsPanel.hidden = !isMultiWatch;
       fillSettingsForm(cfg);
 
       const accounts = state.accounts || [];
@@ -882,6 +929,7 @@ function html() {
         els.positions.replaceChildren(...positions.map(renderPosition));
       }
       renderLedger(state.pnl || {});
+      renderAnalytics(state.analytics || {}, accounts);
     }
 
     function renderWallet(account) {
@@ -945,6 +993,63 @@ function html() {
         '<div class="addr">' + escapeHtml(shortAddr(trade.trader_address)) + '</div>' +
         '<div><div class="market">' + escapeHtml(trade.market || '') + '</div><div class="small">' + escapeHtml(trade.outcome || '?') + ' | ' + Number(trade.shares || 0).toFixed(3) + ' sh @ $' + Number(trade.price || 0).toFixed(3) + '</div></div>' +
         '<div><strong class="' + pnlClass + '">' + money(pnl, true) + '</strong><div class="small">' + (trade.action === 'BUY' ? money(trade.cost) : money(trade.proceeds)) + '</div></div>';
+      return node;
+    }
+
+    function percent(value, digits = 1) {
+      if (!hasNumericValue(value)) return 'N/A';
+      return (Number(value) * 100).toFixed(digits) + '%';
+    }
+
+    function priceDelta(value) {
+      if (!hasNumericValue(value)) return 'N/A';
+      const number = Number(value);
+      const sign = number > 0 ? '+' : '';
+      return sign + number.toFixed(4);
+    }
+
+    function findAccount(accounts, address) {
+      const target = String(address || '').toLowerCase();
+      return accounts.find((account) => String(account.address || '').toLowerCase() === target) || null;
+    }
+
+    function renderAnalytics(analytics, accounts) {
+      if (els.analyticsPanel.hidden) return;
+      if (!analytics.enabled) {
+        els.analyticsStatus.textContent = 'disabled';
+        els.analytics.innerHTML = '<div class="empty">Wallet analytics DB is not connected. Run wallet-score for target wallets after Postgres is available.</div>';
+        return;
+      }
+
+      const wallets = analytics.wallets || [];
+      els.analyticsStatus.textContent = wallets.length + ' target(s)';
+      if (wallets.length === 0) {
+        els.analytics.innerHTML = '<div class="empty">No target wallets configured</div>';
+        return;
+      }
+
+      els.analytics.replaceChildren(...wallets.map((wallet) => renderAnalyticsRow(wallet, findAccount(accounts, wallet.address))));
+    }
+
+    function renderAnalyticsRow(wallet, account) {
+      const metrics = wallet.metrics || {};
+      const paperPnl = account && hasNumericValue(account.totalPnl) ? Number(account.totalPnl) : null;
+      const paperClass = paperPnl === null ? '' : (paperPnl >= 0 ? 'green' : 'red');
+      const score = hasNumericValue(wallet.score) ? Number(wallet.score).toFixed(1) : 'N/A';
+      const scoreClass = wallet.eligible ? 'good' : wallet.provisionalEligible ? '' : 'bad';
+      const statusText = wallet.eligible ? 'paper-ready' : wallet.provisionalEligible ? 'review' : 'blocked';
+      const reasons = (wallet.reasonCodes || []).slice(0, 3).join(', ') || 'not scored';
+      const scoredAt = wallet.scoredAt ? new Date(wallet.scoredAt).toLocaleString() : 'not scored';
+      const node = document.createElement('div');
+      node.className = 'analytics-row';
+      node.innerHTML =
+        '<div><div class="addr">' + escapeHtml(shortAddr(wallet.address)) + '</div><div class="small">' + escapeHtml(reasons) + '</div></div>' +
+        '<div><div class="small">Paper PnL</div><strong class="' + paperClass + '">' + (paperPnl === null ? 'N/A' : money(paperPnl, true)) + '</strong></div>' +
+        '<div><div class="small">Score</div><span class="badge ' + scoreClass + '">' + score + ' ' + statusText + '</span></div>' +
+        '<div><div class="small">ROI</div><strong>' + percent(metrics.realizedRoi) + '</strong></div>' +
+        '<div><div class="small">CLV</div><strong>' + priceDelta(metrics.weightedClv) + '</strong></div>' +
+        '<div><div class="small">Slip</div><strong>' + priceDelta(metrics.copySlippageEstimate) + '</strong></div>' +
+        '<div><div class="small">Updated</div><span class="small">' + escapeHtml(scoredAt) + '</span></div>';
       return node;
     }
 

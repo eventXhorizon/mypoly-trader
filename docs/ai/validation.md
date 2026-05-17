@@ -97,3 +97,26 @@ Known unverified:
 
 - Need a real active wallet sample to validate CLV and orderbook payload normalization against non-empty trades.
 - Current-book slippage is only a proxy until real-time post-fill snapshots are recorded.
+
+## 2026-05-17 Multi-Watch Dashboard Analytics Panel
+
+Changed:
+
+- Added `analytics` state to the Web dashboard only for `multi-watch` mode.
+- Added a `Wallet Analytics` panel that displays target wallet paper PnL, score, ROI, CLV, slippage, and last scoring time.
+- Initialized wallet analytics DB in `multi-watch`.
+- Fixed multi-watch WebSocket cleanup so terminating during connection setup does not emit an unhandled error.
+
+Validation performed:
+
+- `node --check src/ui/webDashboard.js`
+- `node --check src/multi-watch.js`
+- `node --check src/services/walletScorer.js`
+- `node --check src/services/multiWsWatcher.js`
+- Temporary smoke test: `WEB_PORT=8877 MULTI_WATCH_REQUIRE_DB=false DATABASE_URL=... TRADER_ADDRESSES=0x1111111111111111111111111111111111111111 npm run multi-watch`
+- Queried `http://127.0.0.1:8877/api/state` and confirmed it returned `analytics.enabled=true` with the target wallet's Stage 1B score and metrics.
+
+Known unverified:
+
+- Browser visual rendering was not checked with a screenshot.
+- A real scored wallet with non-empty CLV/liquidity metrics still needs to be tested.

@@ -123,6 +123,7 @@ function cleanup(reconnect = true) {
     }
     if (ws) {
         ws.removeAllListeners();
+        ws.on('error', () => {});
         if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
             ws.terminate();
         }
