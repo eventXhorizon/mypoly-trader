@@ -1,17 +1,23 @@
 import http from 'http';
 import { getPnlReport } from '../services/pnlLedger.js';
-import { getWalletAnalyticsReport } from '../services/walletScorer.js';
+import { getTargetWalletReport } from '../services/walletScorer.js';
 
 const MAX_LOGS = 2000;
 const MAX_JSON_BODY_BYTES = 32 * 1024;
+const TARGET_REPORT_REFRESH_MS = 15_000;
 
 let server = null;
 let dashboardActions = {};
+let targetReportCacheKey = '';
+let targetReportFetchedAt = 0;
+let targetReportInFlight = null;
+let targetReportCache = { enabled: false, wallets: [] };
 let currentState = {
     accounts: [],
     config: {},
     pnl: { enabled: false, summary: null, byWallet: [], trades: [], snapshots: [] },
     analytics: { enabled: false, wallets: [] },
+    targetReport: { enabled: false, wallets: [] },
     updatedAt: new Date().toISOString(),
 };
 const logs = [];
@@ -126,11 +132,13 @@ function publicConfig(config) {
 
 async function setDashboardState(accounts, config) {
     const mode = config.dashboardMode || 'simulation';
+    const targetAddresses = dashboardTargetAddresses(config);
     const pnl = mode === 'multi-watch'
         ? await getPnlReport(config.pnlHistoryLimit)
         : { enabled: false, summary: null, byWallet: [], trades: [], snapshots: [] };
+    const targetReport = await loadTargetReport(targetAddresses, mode);
     const analytics = mode === 'multi-watch'
-        ? await getWalletAnalyticsReport(config.traderAddresses || [])
+        ? targetReport
         : { enabled: false, wallets: [] };
     currentState = {
         accounts,
@@ -138,12 +146,71 @@ async function setDashboardState(accounts, config) {
         totals: summarize(accounts, config),
         pnl,
         analytics,
+        targetReport,
         updatedAt: new Date().toISOString(),
     };
 
     for (const client of clients) {
         sendEvent(client, 'state', currentState);
     }
+}
+
+function dashboardTargetAddresses(config) {
+    const addresses = Array.isArray(config.traderAddresses) ? config.traderAddresses : [];
+    if (addresses.length > 0) return addresses;
+    return config.traderAddress ? [config.traderAddress] : [];
+}
+
+function normalizeWalletAddresses(addresses) {
+    return [...new Set(
+        addresses
+            .map((address) => String(address || '').trim().toLowerCase())
+            .filter((address) => /^0x[a-f0-9]{40}$/.test(address)),
+    )];
+}
+
+function fallbackTargetReport(addresses, extra = {}) {
+    return {
+        enabled: false,
+        wallets: addresses.map((address) => ({ address, scored: false, paper: null, latestPaperTrade: null })),
+        ...extra,
+    };
+}
+
+async function loadTargetReport(addresses, mode) {
+    const normalizedAddresses = normalizeWalletAddresses(addresses);
+    if (mode === 'multi-watch') {
+        const report = await getTargetWalletReport(normalizedAddresses);
+        targetReportCacheKey = normalizedAddresses.join(',');
+        targetReportCache = report;
+        targetReportFetchedAt = Date.now();
+        return report;
+    }
+
+    const key = normalizedAddresses.join(',');
+    if (key !== targetReportCacheKey) {
+        targetReportCacheKey = key;
+        targetReportCache = fallbackTargetReport(normalizedAddresses);
+        targetReportFetchedAt = 0;
+    }
+
+    const now = Date.now();
+    if (!targetReportInFlight && now - targetReportFetchedAt >= TARGET_REPORT_REFRESH_MS) {
+        targetReportInFlight = getTargetWalletReport(normalizedAddresses)
+            .then((report) => {
+                targetReportCache = report;
+                targetReportFetchedAt = Date.now();
+            })
+            .catch((err) => {
+                targetReportCache = fallbackTargetReport(normalizedAddresses, { error: err.message });
+                targetReportFetchedAt = Date.now();
+            })
+            .finally(() => {
+                targetReportInFlight = null;
+            });
+    }
+
+    return targetReportCache;
 }
 
 function summarize(accounts, config) {
@@ -390,6 +457,29 @@ function html() {
       padding: 14px;
       min-height: calc(100vh - 56px);
     }
+    .tabs {
+      display: flex;
+      gap: 6px;
+      padding: 10px 14px 0;
+      border-bottom: 1px solid var(--line);
+      background: var(--bg);
+    }
+    .tab-button {
+      height: 34px;
+      border-bottom-left-radius: 0;
+      border-bottom-right-radius: 0;
+      border-bottom-color: transparent;
+    }
+    .tab-button.active {
+      background: var(--panel);
+      border-color: var(--line);
+      border-bottom-color: var(--panel);
+      color: var(--text);
+      font-weight: 700;
+    }
+    .targets-page {
+      grid-template-columns: 1fr;
+    }
     section {
       min-width: 0;
     }
@@ -528,6 +618,23 @@ function html() {
       border-radius: 8px;
       background: var(--surface);
     }
+    .target-list {
+      display: grid;
+      gap: 8px;
+    }
+    .target-row {
+      display: grid;
+      grid-template-columns: minmax(220px, 1.45fr) minmax(100px, 0.75fr) repeat(5, minmax(98px, 0.75fr)) minmax(170px, 1fr);
+      gap: 8px;
+      align-items: start;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+    .target-row > div {
+      min-width: 0;
+    }
     .badge {
       display: inline-flex;
       align-items: center;
@@ -658,6 +765,7 @@ function html() {
       .ledger-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .trade-row { grid-template-columns: 1fr; }
       .analytics-row { grid-template-columns: 1fr 1fr; }
+      .target-row { grid-template-columns: 1fr 1fr; }
       .form-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     @media (max-width: 560px) {
@@ -667,6 +775,7 @@ function html() {
       .wallet { grid-template-columns: 1fr; }
       .ledger-grid { grid-template-columns: 1fr; }
       .analytics-row { grid-template-columns: 1fr; }
+      .target-row { grid-template-columns: 1fr; }
       .form-row { grid-template-columns: 1fr; }
     }
   </style>
@@ -683,7 +792,11 @@ function html() {
       <div class="status"><span id="dot" class="dot"></span><span id="status">connecting</span></div>
     </div>
   </header>
-  <main>
+  <nav class="tabs" aria-label="Dashboard tabs">
+    <button id="liveTabButton" class="tab-button active" type="button">Live</button>
+    <button id="targetsTabButton" class="tab-button" type="button">Targets</button>
+  </nav>
+  <main id="livePage">
     <section>
       <div class="metrics">
         <div class="metric"><div class="label">Total Equity</div><div id="totalEquity" class="value">$0.00</div></div>
@@ -778,6 +891,23 @@ function html() {
       <div id="logList"></div>
     </section>
   </main>
+  <main id="targetsPage" class="targets-page" hidden>
+    <section>
+      <div id="targetSummary" class="metrics">
+        <div class="metric"><div class="label">Targets</div><div class="value">0</div></div>
+        <div class="metric"><div class="label">Paper Realized</div><div class="value">$0.00</div></div>
+        <div class="metric"><div class="label">Paper Trades</div><div class="value">0</div></div>
+        <div class="metric"><div class="label">Paper-Ready</div><div class="value">0</div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">
+          <span>Target Wallets</span>
+          <span id="targetStatus" class="small"></span>
+        </div>
+        <div id="targetWalletsList" class="panel-body target-list"><div class="empty">Waiting for target report...</div></div>
+      </div>
+    </section>
+  </main>
   <script>
     const els = {
       dot: document.getElementById('dot'),
@@ -813,11 +943,19 @@ function html() {
       dashboardNav: document.getElementById('dashboardNav'),
       toggleScroll: document.getElementById('toggleScroll'),
       clearLogs: document.getElementById('clearLogs'),
+      liveTabButton: document.getElementById('liveTabButton'),
+      targetsTabButton: document.getElementById('targetsTabButton'),
+      livePage: document.getElementById('livePage'),
+      targetsPage: document.getElementById('targetsPage'),
+      targetSummary: document.getElementById('targetSummary'),
+      targetStatus: document.getElementById('targetStatus'),
+      targetWalletsList: document.getElementById('targetWalletsList'),
     };
     let autoScroll = true;
     let settingsDirty = false;
     let positionsExpanded = false;
     let lastState = null;
+    let activeTab = 'live';
 
     function money(value, signed = false) {
       const number = Number(value || 0);
@@ -981,6 +1119,15 @@ function html() {
       }
       renderLedger(state.pnl || {});
       renderAnalytics(state.analytics || {}, accounts);
+      renderTargetReport(state.targetReport || state.analytics || {});
+    }
+
+    function showTab(tab) {
+      activeTab = tab === 'targets' ? 'targets' : 'live';
+      els.livePage.hidden = activeTab !== 'live';
+      els.targetsPage.hidden = activeTab !== 'targets';
+      els.liveTabButton.classList.toggle('active', activeTab === 'live');
+      els.targetsTabButton.classList.toggle('active', activeTab === 'targets');
     }
 
     function sameHostUrl(port) {
@@ -1103,7 +1250,10 @@ function html() {
 
     function renderAnalyticsRow(wallet, account) {
       const metrics = wallet.metrics || {};
-      const paperPnl = account && hasNumericValue(account.totalPnl) ? Number(account.totalPnl) : null;
+      const reportPaperPnl = wallet.paper && hasNumericValue(wallet.paper.realized_pnl) ? Number(wallet.paper.realized_pnl) : null;
+      const paperPnl = reportPaperPnl !== null
+        ? reportPaperPnl
+        : account && hasNumericValue(account.totalPnl) ? Number(account.totalPnl) : null;
       const paperClass = paperPnl === null ? '' : (paperPnl >= 0 ? 'green' : 'red');
       const score = hasNumericValue(wallet.score) ? Number(wallet.score).toFixed(1) : 'N/A';
       const scoreClass = wallet.eligible ? 'good' : wallet.provisionalEligible ? '' : 'bad';
@@ -1120,6 +1270,62 @@ function html() {
         '<div><div class="small">CLV</div><strong>' + priceDelta(metrics.weightedClv) + '</strong></div>' +
         '<div><div class="small">Slip</div><strong>' + priceDelta(metrics.copySlippageEstimate) + '</strong></div>' +
         '<div><div class="small">Updated</div><span class="small">' + escapeHtml(scoredAt) + '</span></div>';
+      return node;
+    }
+
+    function renderTargetReport(report) {
+      const wallets = report.wallets || [];
+      const paperRealized = wallets.reduce((sum, wallet) => sum + Number(wallet.paper?.realized_pnl || 0), 0);
+      const paperTrades = wallets.reduce((sum, wallet) => sum + Number(wallet.paper?.total_buys || 0) + Number(wallet.paper?.total_sells || 0), 0);
+      const ready = wallets.filter((wallet) => wallet.eligible).length;
+      const realizedClass = paperRealized >= 0 ? 'green' : 'red';
+
+      els.targetSummary.innerHTML =
+        '<div class="metric"><div class="label">Targets</div><div class="value">' + wallets.length + '</div></div>' +
+        '<div class="metric"><div class="label">Paper Realized</div><div class="value ' + realizedClass + '">' + money(paperRealized, true) + '</div></div>' +
+        '<div class="metric"><div class="label">Paper Trades</div><div class="value">' + paperTrades + '</div></div>' +
+        '<div class="metric"><div class="label">Paper-Ready</div><div class="value">' + ready + '</div></div>';
+
+      if (!report.enabled) {
+        els.targetStatus.textContent = 'disabled';
+        els.targetWalletsList.innerHTML = '<div class="empty">' + escapeHtml(report.error || 'Wallet analytics DB is not connected.') + '</div>';
+        return;
+      }
+
+      els.targetStatus.textContent = wallets.length + ' target(s)';
+      if (wallets.length === 0) {
+        els.targetWalletsList.innerHTML = '<div class="empty">No target wallets configured</div>';
+        return;
+      }
+
+      els.targetWalletsList.replaceChildren(...wallets.map(renderTargetRow));
+    }
+
+    function renderTargetRow(wallet) {
+      const metrics = wallet.metrics || {};
+      const paper = wallet.paper || {};
+      const latest = wallet.latestPaperTrade || {};
+      const paperPnl = hasNumericValue(paper.realized_pnl) ? Number(paper.realized_pnl) : null;
+      const paperClass = paperPnl === null ? '' : (paperPnl >= 0 ? 'green' : 'red');
+      const score = hasNumericValue(wallet.score) ? Number(wallet.score).toFixed(1) : 'N/A';
+      const scoreClass = wallet.eligible ? 'good' : wallet.provisionalEligible ? '' : 'bad';
+      const statusText = wallet.eligible ? 'paper-ready' : wallet.provisionalEligible ? 'review' : 'blocked';
+      const latestTrade = latest.created_at
+        ? new Date(latest.created_at).toLocaleString() + ' | ' + (latest.action || '') + ' ' + (latest.market || '') + ' ' + (latest.outcome || '')
+        : 'no paper trades';
+      const scoredAt = wallet.scoredAt ? new Date(wallet.scoredAt).toLocaleString() : 'not scored';
+      const reasons = (wallet.reasonCodes || []).slice(0, 4).join(', ') || 'not scored';
+      const node = document.createElement('div');
+      node.className = 'target-row';
+      node.innerHTML =
+        '<div><div class="addr">' + escapeHtml(shortAddr(wallet.address)) + '</div><div class="small">' + escapeHtml(wallet.address) + '</div><div class="small">' + escapeHtml(reasons) + '</div></div>' +
+        '<div><div class="small">Score</div><span class="badge ' + scoreClass + '">' + score + ' ' + statusText + '</span></div>' +
+        '<div><div class="small">Paper PnL</div><strong class="' + paperClass + '">' + (paperPnl === null ? 'N/A' : money(paperPnl, true)) + '</strong></div>' +
+        '<div><div class="small">Paper Trades</div><strong>' + Number((paper.total_buys || 0) + (paper.total_sells || 0)) + '</strong></div>' +
+        '<div><div class="small">ROI</div><strong>' + percent(metrics.realizedRoi) + '</strong></div>' +
+        '<div><div class="small">CLV</div><strong>' + priceDelta(metrics.weightedClv) + '</strong></div>' +
+        '<div><div class="small">Slip</div><strong>' + priceDelta(metrics.copySlippageEstimate) + '</strong></div>' +
+        '<div><div class="small">Latest</div><span class="small">' + escapeHtml(latestTrade) + '</span><div class="small">' + escapeHtml(scoredAt) + '</div></div>';
       return node;
     }
 
@@ -1166,6 +1372,12 @@ function html() {
     els.clearLogs.addEventListener('click', () => {
       els.logList.replaceChildren();
     });
+    els.liveTabButton.addEventListener('click', () => {
+      showTab('live');
+    });
+    els.targetsTabButton.addEventListener('click', () => {
+      showTab('targets');
+    });
     els.togglePositions.addEventListener('click', () => {
       positionsExpanded = !positionsExpanded;
       if (lastState) renderState(lastState);
@@ -1185,6 +1397,7 @@ function html() {
       setTheme(currentTheme() === 'light' ? 'dark' : 'light');
     });
     setTheme(currentTheme());
+    showTab(activeTab);
 
     const events = new EventSource('/events');
     events.addEventListener('open', () => {

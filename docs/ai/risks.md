@@ -18,6 +18,7 @@
 - Backfills can create API rate-limit pressure and should use bounded concurrency and retries.
 - Postgres writes should avoid unbounded growth without retention or indexing plans.
 - Live copy should remain gated; scoring output must not automatically trigger real orders.
+- Same-page dashboard analytics must remain read-only in live/copy-bot mode; no dashboard analytics action should call order execution or mutate live trading configuration.
 - Stage 1A closed-position field normalization is best-effort because Data API payloads can vary; real wallet samples must be checked before relying on scores.
 - Stage 1A `provisionalEligible` must not be treated as final eligibility because CLV and copy-slippage are still unknown.
 - Stage 1B `copySlippageEstimate` is based on the current orderbook, not the historical orderbook at target fill time.

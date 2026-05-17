@@ -140,3 +140,28 @@ Validation performed:
 Known unverified:
 
 - Browser visual rendering of the header link was not screenshot-tested.
+
+## 2026-05-17 Same-Page Read-Only Targets Tab
+
+Changed:
+
+- Added a browser-style `Targets` tab to the shared Web dashboard page.
+- Added a read-only target wallet report that combines wallet score metrics with stored paper PnL from `paper_trades` when that table exists.
+- Added a read-only wallet analytics DB initializer for live/copy-bot mode.
+- In live/copy-bot mode, target report refresh uses a short-lived cache and background query so the live dashboard refresh path does not wait on Postgres.
+
+Validation performed:
+
+- `node --check src/ui/webDashboard.js`
+- `node --check src/bot.js`
+- `node --check src/services/walletScorer.js`
+- `node --check src/services/walletAnalyticsDb.js`
+- `git diff --check`
+- Temporary smoke test: `WEB_HOST=127.0.0.1 WEB_PORT=8877 MULTI_WATCH_REQUIRE_DB=false DATABASE_URL=... TRADER_ADDRESSES=0x1111111111111111111111111111111111111111 npm run multi-watch`
+- Queried `http://127.0.0.1:8877/api/state` and confirmed it returned `targetReport.enabled=true` with the target wallet's score metrics and stored paper PnL.
+
+Known unverified:
+
+- Browser visual rendering of the new tab has not been screenshot-tested yet.
+- Live-bot runtime smoke test was not run because that entry point requires real wallet credentials in `.env`.
+- The smoke test used the existing multi-watch runtime, so it wrote local `portfolio_snapshots` as designed.

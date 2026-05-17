@@ -4,7 +4,7 @@ Date: 2026-05-17
 
 Current goal:
 
-- Show target-wallet analytics and latest paper PnL in the Web dashboard without affecting live copy pages.
+- Show target-wallet analytics and latest paper PnL in the same Web dashboard without affecting live trading.
 
 Recent changes:
 
@@ -30,12 +30,14 @@ Implementation status:
 - The command does not initialize live CLOB order execution and does not place orders.
 - `eligible` can become true only when historical metrics, weighted CLV, and current orderbook copy-slippage checks all pass.
 - `eligible=true` means only "ready for 4-8 week paper follow", not "ready for live copy".
-- The Web dashboard now includes a `Wallet Analytics` panel only when `config.dashboardMode === 'multi-watch'`.
-- The live copy-bot dashboard does not query or display wallet analytics.
+- The Web dashboard now includes browser-style `Live` and `Targets` tabs in the same served page.
+- The `Targets` tab reads wallet analytics and stored paper PnL from Postgres when available.
+- In copy-bot/live mode, target reports are refreshed from a cached background read-only query so dashboard refresh does not wait on Postgres.
+- The live copy-bot dashboard connects to wallet analytics in read-only mode only; it does not create analytics tables or write scoring data.
 - Dashboard headers now include cross-links: live dashboard links to multi-watch, and multi-watch links to live.
 - A multi-watch shutdown edge case was fixed by swallowing WebSocket errors after listeners are removed during cleanup.
 
 Recommended next implementation step:
 
 - Add real-time post-fill orderbook snapshots in multi-watch so paper follow can use actual observed copy prices rather than only current-book estimates.
-- Add a dashboard action to run/refresh `wallet-score` for selected targets from the UI if manual CLI refresh becomes inconvenient.
+- Add a dashboard action to run/refresh `wallet-score` for selected targets from the UI if manual CLI refresh becomes inconvenient; keep it gated away from live order execution.

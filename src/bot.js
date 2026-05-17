@@ -14,6 +14,7 @@ import { startWsWatcher, stopWsWatcher } from './services/wsWatcher.js';
 import { getSimStats } from './utils/simStats.js';
 import { getPaperBalance } from './utils/paperBalance.js';
 import { appendWebLog, startWebDashboard, stopWebDashboard, updateWebDashboard } from './ui/webDashboard.js';
+import { closeWalletAnalyticsDb, initWalletAnalyticsReadOnlyDb } from './services/walletAnalyticsDb.js';
 import logger from './utils/logger.js';
 
 config.dashboardMode = 'copy-bot';
@@ -153,6 +154,7 @@ async function main() {
         logger.error(`Failed to start web dashboard: ${err.message}`);
         process.exit(1);
     }
+    await initWalletAnalyticsReadOnlyDb(logger);
 
     const mode = config.dryRun ? 'SIMULATION' : 'LIVE TRADING';
     logger.info(`=== Polymarket Copy Trade [${mode}] ===`);
@@ -204,6 +206,7 @@ async function main() {
         logger.info('Shutting down...');
         stopWsWatcher();
         stopWebDashboard();
+        closeWalletAnalyticsDb().catch((err) => logger.warn(`Failed to close wallet analytics DB: ${err.message}`));
         clearInterval(redeemerInterval);
         clearInterval(statusInterval);
         clearInterval(dashboardInterval);

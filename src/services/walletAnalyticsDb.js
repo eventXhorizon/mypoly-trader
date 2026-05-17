@@ -20,6 +20,32 @@ export function isWalletAnalyticsDbEnabled() {
     return enabled;
 }
 
+export async function initWalletAnalyticsReadOnlyDb(logger = console) {
+    if (initialized) return enabled;
+
+    if (!config.databaseUrl) {
+        initialized = true;
+        enabled = false;
+        logger.warn?.('DATABASE_URL is not set. Wallet analytics read-only dashboard is disabled.');
+        return false;
+    }
+
+    pool = createPool();
+    try {
+        await pool.query('select 1');
+        initialized = true;
+        enabled = true;
+        logger.info?.('Wallet analytics database connected in read-only mode');
+        return true;
+    } catch (err) {
+        initialized = true;
+        enabled = false;
+        await closeWalletAnalyticsDb();
+        logger.error?.(`Wallet analytics read-only dashboard disabled: ${err.message}`);
+        return false;
+    }
+}
+
 export async function initWalletAnalyticsDb(logger = console) {
     if (initialized) return enabled;
 

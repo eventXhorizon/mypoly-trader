@@ -36,14 +36,16 @@ Rationale:
 - Historical performance can be distorted by stale markets, one-off trades, survivorship bias, and uncopyable fills.
 - Paper follow validates the actual latency, spread, slippage, skipped-trade rate, and realized PnL of this system.
 
-## 2026-05-17: Dashboard analytics are multi-watch only
+## 2026-05-17: Dashboard analytics are same-page read-only
 
 Decision:
 
-- Show wallet analytics only on the `multi-watch` dashboard.
-- Do not attach analytics panels or analytics queries to the live copy-bot dashboard.
+- Show wallet analytics and paper-follow PnL through a same-page `Targets` tab in the shared Web dashboard.
+- The live copy-bot dashboard may initialize a read-only wallet analytics DB connection, but it must not create analytics tables, mutate scoring records, start multi-watch runtime, or trigger real orders from analytics data.
+- Keep the live trading state in the existing `Live` tab.
 
 Rationale:
 
-- The analytics workflow is candidate screening and paper follow validation.
-- Live copy pages should stay focused on real trading state and avoid accidental coupling to analysis tables.
+- The user wants a browser-tab-like view inside the same program instead of a separate port/page.
+- Candidate screening and paper follow validation are observability workflows, not execution workflows.
+- Read-only cached dashboard queries reduce coupling to live copy refresh and preserve the existing order execution boundary.

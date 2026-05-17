@@ -425,3 +425,86 @@ export async function getWalletAnalyticsReport(addresses = []) {
 
     return { enabled: true, wallets };
 }
+
+export async function getTargetWalletReport(addresses = []) {
+    const normalizedAddresses = [...new Set(
+        addresses
+            .map((address) => String(address || '').trim().toLowerCase())
+            .filter((address) => /^0x[a-f0-9]{40}$/.test(address)),
+    )];
+
+    const fallbackWallets = normalizedAddresses.map((address) => ({
+        address,
+        scored: false,
+        paper: null,
+        latestPaperTrade: null,
+    }));
+
+    if (!isWalletAnalyticsDbEnabled()) {
+        return { enabled: false, wallets: fallbackWallets };
+    }
+
+    if (normalizedAddresses.length === 0) {
+        return { enabled: true, wallets: [] };
+    }
+
+    try {
+        const analytics = await getWalletAnalyticsReport(normalizedAddresses);
+        let paperRows = [];
+        let latestRows = [];
+        try {
+            const [paperResult, latestResult] = await Promise.all([
+                walletAnalyticsQuery(`
+                    select
+                        trader_address,
+                        count(*) filter (where action = 'BUY')::int as total_buys,
+                        count(*) filter (where action = 'SELL')::int as total_sells,
+                        coalesce(sum(cost) filter (where action = 'BUY'), 0)::float8 as buy_volume,
+                        coalesce(sum(proceeds) filter (where action = 'SELL'), 0)::float8 as sell_volume,
+                        coalesce(sum(pnl) filter (where action = 'SELL'), 0)::float8 as realized_pnl,
+                        max(created_at) as updated_at
+                    from paper_trades
+                    where trader_address = any($1::text[])
+                    group by trader_address;
+                `, [normalizedAddresses]),
+                walletAnalyticsQuery(`
+                    select distinct on (trader_address)
+                        trader_address,
+                        created_at,
+                        action,
+                        market,
+                        outcome,
+                        price::float8 as price,
+                        shares::float8 as shares,
+                        cost::float8 as cost,
+                        proceeds::float8 as proceeds,
+                        pnl::float8 as pnl
+                    from paper_trades
+                    where trader_address = any($1::text[])
+                    order by trader_address, created_at desc;
+                `, [normalizedAddresses]),
+            ]);
+            paperRows = paperResult.rows;
+            latestRows = latestResult.rows;
+        } catch (err) {
+            if (err.code !== '42P01') throw err;
+        }
+
+        const paperByAddress = new Map(paperRows.map((row) => [row.trader_address, row]));
+        const latestByAddress = new Map(latestRows.map((row) => [row.trader_address, row]));
+        return {
+            ...analytics,
+            wallets: analytics.wallets.map((wallet) => ({
+                ...wallet,
+                paper: paperByAddress.get(wallet.address) || null,
+                latestPaperTrade: latestByAddress.get(wallet.address) || null,
+            })),
+        };
+    } catch (err) {
+        return {
+            enabled: false,
+            error: err.message,
+            wallets: fallbackWallets,
+        };
+    }
+}
