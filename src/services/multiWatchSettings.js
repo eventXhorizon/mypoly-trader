@@ -41,8 +41,8 @@ function normalizeSettings(input) {
     }
 
     const sizeMode = input.sizeMode || 'percentage';
-    if (!['percentage', 'balance'].includes(sizeMode)) {
-        throw new Error('SIZE_MODE must be percentage or balance');
+    if (!['percentage', 'balance', 'target'].includes(sizeMode)) {
+        throw new Error('SIZE_MODE must be percentage, balance, or target');
     }
 
     return {

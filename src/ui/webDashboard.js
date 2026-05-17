@@ -711,6 +711,7 @@ function html() {
               <select id="sizeMode">
                 <option value="percentage">percentage</option>
                 <option value="balance">balance</option>
+                <option value="target">target</option>
               </select>
             </div>
             <div class="form-field">
@@ -939,7 +940,10 @@ function html() {
       els.totalCash.textContent = money(totals.totalCash);
       els.openCost.textContent = money(totals.totalOpenCost);
 
-      els.settings.textContent = 'Size ' + (cfg.sizeMode || '-') + ' ' + (cfg.sizePercent ?? '-') + '% | Cap ' + money(cfg.maxPositionSize);
+      const sizingText = cfg.sizeMode === 'target'
+        ? 'Size target notional | Cap ' + money(cfg.maxPositionSize)
+        : 'Size ' + (cfg.sizeMode || '-') + ' ' + (cfg.sizePercent ?? '-') + '% | Cap ' + money(cfg.maxPositionSize);
+      els.settings.textContent = sizingText;
       els.updatedAt.textContent = state.updatedAt ? new Date(state.updatedAt).toLocaleTimeString() : '';
       const isMultiWatch = cfg.mode === 'multi-watch';
       configureDashboardNav(cfg, isMultiWatch);

@@ -60,7 +60,11 @@ export function ensureAccounts(addresses) {
     return state;
 }
 
-function tradeSize(account) {
+function tradeSize(account, trade) {
+    if (config.sizeMode === 'target') {
+        const targetNotional = Number(trade.size || 0) * Number(trade.price || 0);
+        return Number.isFinite(targetNotional) && targetNotional > 0 ? targetNotional : 0;
+    }
     if (config.sizeMode === 'balance') {
         return account.cash * (config.sizePercent / 100);
     }
@@ -103,7 +107,7 @@ export function applyPaperTrade(trade) {
         const existing = account.positions[posKey];
         const alreadySpent = marketCost(account, marketKey);
         const remainingCap = Math.max(0, config.maxPositionSize - alreadySpent);
-        let cost = Math.min(tradeSize(account), remainingCap, account.cash);
+        let cost = Math.min(tradeSize(account, trade), remainingCap, account.cash);
 
         const effectiveMin = Math.max(config.minTradeSize, 1);
         if (cost < effectiveMin) {

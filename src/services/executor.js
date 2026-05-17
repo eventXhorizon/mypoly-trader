@@ -63,20 +63,23 @@ async function getOnChainTokenBalance(tokenId) {
 }
 
 /**
- * Calculate trade size for our entry — independent of the individual fill event.
- *
- * Limit orders can be filled in many small chunks; using the event's fill size
- * would give inconsistent (often sub-minimum) results.
+ * Calculate trade size for our entry.
  *
  * SIZE_MODE=percentage → SIZE_PERCENT% of MAX_POSITION_SIZE per outcome token
  * SIZE_MODE=balance    → SIZE_PERCENT% of current balance
+ * SIZE_MODE=target     → target trade notional, capped by MAX_POSITION_SIZE
  */
-async function calculateTradeSize() {
+async function calculateTradeSize(trade) {
     if (config.sizeMode === 'percentage') {
         return config.maxPositionSize * (config.sizePercent / 100);
     } else if (config.sizeMode === 'balance') {
         const balance = config.dryRun ? getPaperBalance() : await getUsdcBalance();
         return balance * (config.sizePercent / 100);
+    } else if (config.sizeMode === 'target') {
+        const shares = Number(trade?.size || 0);
+        const price = Number(trade?.price || 0);
+        const targetNotional = shares * price;
+        return Number.isFinite(targetNotional) && targetNotional > 0 ? targetNotional : 0;
     }
     return 0;
 }
@@ -324,8 +327,8 @@ async function _doExecuteBuy(trade, marketOpts, effectiveConditionId, positionKe
         logger.info(`[${source}] Adding to existing outcome position (spent $${spent.toFixed(2)} / $${config.maxPositionSize})`);
     }
 
-    // Calculate our trade size (independent of individual fill event)
-    let tradeSize = await calculateTradeSize();
+    // Calculate our trade size
+    let tradeSize = await calculateTradeSize(trade);
 
     // Cap so we don't exceed maxPositionSize
     if (existingPos) {

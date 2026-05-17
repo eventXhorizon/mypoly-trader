@@ -96,7 +96,7 @@ const config = {
   walletAnalyticsOrderbookLimit: parseInt(process.env.WALLET_ANALYTICS_ORDERBOOK_LIMIT || '40', 10),
 
   // Trade sizing
-  sizeMode: process.env.SIZE_MODE || 'percentage', // "percentage" | "balance"
+  sizeMode: process.env.SIZE_MODE || 'percentage', // "percentage" | "balance" | "target"
   sizePercent: parseFloat(process.env.SIZE_PERCENT || '50'),
   minTradeSize: parseFloat(process.env.MIN_TRADE_SIZE || '1'),
   maxPositionSize: parseFloat(process.env.MAX_POSITION_SIZE || '10'),
@@ -255,8 +255,8 @@ export function validateConfig() {
   if (invalid.length > 0) {
     throw new Error(`Invalid target wallet address value(s): ${invalid.join(', ')}`);
   }
-  if (!['percentage', 'balance'].includes(config.sizeMode)) {
-    throw new Error(`Invalid SIZE_MODE: ${config.sizeMode}. Use "percentage" or "balance".`);
+  if (!['percentage', 'balance', 'target'].includes(config.sizeMode)) {
+    throw new Error(`Invalid SIZE_MODE: ${config.sizeMode}. Use "percentage", "balance", or "target".`);
   }
   if (!['market', 'limit'].includes(config.sellMode)) {
     throw new Error(`Invalid SELL_MODE: ${config.sellMode}. Use "market" or "limit".`);
@@ -281,8 +281,8 @@ export function validateMultiWatchConfig() {
   if (invalid.length > 0) {
     throw new Error(`Invalid TRADER_ADDRESSES value(s): ${invalid.join(', ')}`);
   }
-  if (!['percentage', 'balance'].includes(config.sizeMode)) {
-    throw new Error(`Invalid SIZE_MODE: ${config.sizeMode}. Use "percentage" or "balance".`);
+  if (!['percentage', 'balance', 'target'].includes(config.sizeMode)) {
+    throw new Error(`Invalid SIZE_MODE: ${config.sizeMode}. Use "percentage", "balance", or "target".`);
   }
   if (config.simStartBalance <= 0) throw new Error('SIM_START_BALANCE must be > 0');
   if (config.sizePercent <= 0) throw new Error('SIZE_PERCENT must be > 0');

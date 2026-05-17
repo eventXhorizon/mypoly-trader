@@ -102,6 +102,16 @@ WEB_HOST=0.0.0.0
 WEB_PORT=8787
 ```
 
+如果你想“目标钱包这笔买多少，我就跟多少，但最多 2U”，把 sizing 改成：
+
+```env
+SIZE_MODE=target
+MAX_POSITION_SIZE=2
+MIN_TRADE_SIZE=1
+```
+
+例如目标钱包买了 `$0.15`，程序会因为低于 `MIN_TRADE_SIZE=1` 而跳过；目标钱包买了 `$1.50`，程序尝试跟 `$1.50`；目标钱包买了 `$10`，程序最多跟 `$2`。
+
 Docker 实盘 `live-bot` 会把 dashboard 端口覆盖成 `8788`，所以 Docker 实盘 dashboard 默认是：
 
 ```text
@@ -213,6 +223,29 @@ MAX_POSITION_SIZE=2
 - 如果余额变成 10U，10% 是 1U，则每次会尝试跟 1U。
 
 如果你想“每单固定 2U”，优先用 `percentage` 模式更直接。
+
+### SIZE_MODE=target
+
+```env
+SIZE_MODE=target
+MAX_POSITION_SIZE=2
+MIN_TRADE_SIZE=1
+```
+
+含义：
+
+- 程序按目标钱包这笔成交金额来计算你的跟单金额。
+- 目标成交金额 = 目标成交 shares × 目标成交价格。
+- 仍然受 `MAX_POSITION_SIZE` 限制，所以不会因为目标买很大就超过你的上限。
+- 仍然受 `MIN_TRADE_SIZE` 限制，低于最小下单金额会跳过。
+
+例子：
+
+- 目标钱包买 `15.005 shares @ $0.01`，目标金额约 `$0.15`，低于 `MIN_TRADE_SIZE=1`，跳过。
+- 目标钱包买 `$1.50`，你的程序尝试买 `$1.50`。
+- 目标钱包买 `$20`，你的程序最多买 `$2`。
+
+这种模式适合过滤目标钱包的小额探路单，避免目标只买十几美分时，你却固定追 2U。
 
 ## MIN_TRADE_SIZE
 
@@ -561,6 +594,21 @@ PROXY_WALLET_ADDRESS=你的Polymarket proxy wallet地址
 TRADER_ADDRESS=目标钱包地址
 SIZE_MODE=percentage
 SIZE_PERCENT=100
+MAX_POSITION_SIZE=2
+MIN_TRADE_SIZE=1
+AUTO_SELL_ENABLED=false
+SELL_MODE=market
+WEB_HOST=0.0.0.0
+```
+
+### 实盘单钱包跟单，按目标金额跟，最多 2U
+
+```env
+DRY_RUN=false
+PRIVATE_KEY=你的EOA私钥
+PROXY_WALLET_ADDRESS=你的Polymarket proxy wallet地址
+TRADER_ADDRESS=目标钱包地址
+SIZE_MODE=target
 MAX_POSITION_SIZE=2
 MIN_TRADE_SIZE=1
 AUTO_SELL_ENABLED=false

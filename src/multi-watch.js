@@ -81,7 +81,7 @@ async function main() {
     logger.info('=== Polymarket Multi-Wallet Watch [SIMULATION] ===');
     logger.info(`Wallets        : ${config.traderAddresses.map(shortAddr).join(', ')}`);
     logger.info(`Start balance  : $${config.simStartBalance} per wallet`);
-    logger.info(`Size mode      : ${config.sizeMode} (${config.sizePercent}%)`);
+    logger.info(`Size mode      : ${config.sizeMode === 'target' ? 'target notional' : `${config.sizeMode} (${config.sizePercent}%)`}`);
     logger.info(`Min trade      : $${config.minTradeSize}`);
     logger.info(`Max position   : $${config.maxPositionSize} per outcome`);
     logger.info('No private key, no proxy wallet, no real orders.');

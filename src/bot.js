@@ -158,7 +158,7 @@ async function main() {
     logger.info(`=== Polymarket Copy Trade [${mode}] ===`);
     logger.info(`Traders      : ${config.traderAddresses.map((addr) => config.traderDisplayMap[addr] || addr).join(', ')}`);
     logger.info(`Proxy wallet : ${config.proxyWallet}`);
-    logger.info(`Size mode    : ${config.sizeMode} (${config.sizePercent}%)`);
+    logger.info(`Size mode    : ${config.sizeMode === 'target' ? 'target notional' : `${config.sizeMode} (${config.sizePercent}%)`}`);
     logger.info(`Min trade    : $${config.minTradeSize}`);
     logger.info(`Max position : $${config.maxPositionSize} per outcome`);
     logger.info(`Auto sell    : ${config.autoSellEnabled ? `ON (+${config.autoSellProfitPercent}%)` : 'OFF'}`);
