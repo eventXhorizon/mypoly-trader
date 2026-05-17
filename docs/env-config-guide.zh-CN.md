@@ -14,6 +14,45 @@ cp .env.example .env
 
 本地直接运行需要 Node.js 20.18+。如果用 Docker，镜像已经使用 Node 22，不需要在 VPS 上单独升级 Node。
 
+## 地址分析配置
+
+地址筛选评分使用本地 Postgres 保存历史交易、已关闭仓位和评分结果。先启动数据库：
+
+```bash
+npm run db:up
+```
+
+然后对单个地址回填并评分：
+
+```bash
+npm run wallet-score -- 0x目标钱包地址
+```
+
+查看已评分地址：
+
+```bash
+npm run wallet-score -- --top 20
+```
+
+这个命令只读 Polymarket 公开数据并写本地数据库，不读取私钥，不会真实下单。
+
+可选配置：
+
+```env
+WALLET_ANALYTICS_TRADES_PATH=/trades
+WALLET_ANALYTICS_CLOSED_POSITIONS_PATH=/v1/closed-positions
+WALLET_ANALYTICS_TRADE_LIMIT=500
+WALLET_ANALYTICS_CLOSED_POSITION_LIMIT=500
+WALLET_ANALYTICS_PAGE_LIMIT=100
+WALLET_ANALYTICS_MIN_TRADES=50
+WALLET_ANALYTICS_MIN_SETTLED_MARKETS=30
+WALLET_ANALYTICS_MIN_PROFIT_FACTOR=1.2
+WALLET_ANALYTICS_MAX_DRAWDOWN=0.30
+WALLET_ANALYTICS_MAX_TOP_MARKET_PROFIT_SHARE=0.40
+```
+
+注意：当前评分是 `stage1a`，暂时还没有接入 CLV 和真实跟单滑点。输出里的 `provisionalEligible=true` 只表示值得进入下一步验证，不表示可以实盘跟单。
+
 ## 实盘跟单最小配置
 
 如果你要实盘跟单，例如总资金约 20U，每单跟 2U，可以这样配置：

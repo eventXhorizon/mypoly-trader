@@ -18,6 +18,8 @@
 - Backfills can create API rate-limit pressure and should use bounded concurrency and retries.
 - Postgres writes should avoid unbounded growth without retention or indexing plans.
 - Live copy should remain gated; scoring output must not automatically trigger real orders.
+- Stage 1A closed-position field normalization is best-effort because Data API payloads can vary; real wallet samples must be checked before relying on scores.
+- Stage 1A `provisionalEligible` must not be treated as final eligibility because CLV and copy-slippage are still unknown.
 
 ## Operational risks
 

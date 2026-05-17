@@ -8,6 +8,7 @@
     "start": "node src/index.js",
     "dev": "nodemon --ignore 'data/*.json' src/index.js",
     "multi-watch": "LOG_ASCII=true node src/multi-watch.js",
+    "wallet-score": "LOG_ASCII=true node src/wallet-score.js",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
     "docker:up": "docker compose --profile simulation up -d --build",

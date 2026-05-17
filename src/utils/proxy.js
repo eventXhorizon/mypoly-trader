@@ -23,16 +23,17 @@ let fetchDispatcher = null; // undici ProxyAgent for native fetch
  * internal axios calls go through the proxy.
  * Call this BEFORE creating ClobClient.
  */
-export async function setupAxiosProxy() {
-    if (!config.proxyUrl) {
-        logger.info('No PROXY_URL set — Polymarket API calls will be direct');
+export async function setupAxiosProxy(options = {}) {
+    const effectiveProxyUrl = config.proxyUrl || (options.useEnvProxy ? config.envProxyUrl : '');
+    if (!effectiveProxyUrl) {
+        logger.info('No PROXY_URL or HTTPS_PROXY set — Polymarket API calls will be direct');
         return;
     }
 
     try {
         // 1. Setup axios proxy (for CLOB client)
         const { HttpsProxyAgent } = await import('https-proxy-agent');
-        axiosAgent = new HttpsProxyAgent(config.proxyUrl);
+        axiosAgent = new HttpsProxyAgent(effectiveProxyUrl);
 
         const axiosModule = await import('axios');
         const axios = axiosModule.default || axiosModule;
@@ -51,7 +52,7 @@ export async function setupAxiosProxy() {
             return cfg;
         });
 
-        logger.info(`Axios proxy configured → ${maskProxyUrl(config.proxyUrl)}`);
+        logger.info(`Axios proxy configured → ${maskProxyUrl(effectiveProxyUrl)}`);
     } catch (err) {
         logger.error(`Failed to configure axios proxy: ${err.message}`);
         logger.error('Make sure https-proxy-agent is installed: npm i https-proxy-agent');
@@ -60,8 +61,10 @@ export async function setupAxiosProxy() {
     try {
         // 2. Setup undici ProxyAgent (for native fetch)
         const undici = await import('undici');
-        fetchDispatcher = new undici.ProxyAgent(config.proxyUrl);
-        logger.info(`Fetch proxy configured → ${maskProxyUrl(config.proxyUrl)}`);
+        fetchDispatcher = config.proxyUrl
+            ? new undici.ProxyAgent(config.proxyUrl)
+            : new undici.EnvHttpProxyAgent();
+        logger.info(`Fetch proxy configured → ${maskProxyUrl(effectiveProxyUrl)}`);
     } catch (err) {
         logger.error(`Failed to configure fetch proxy: ${err.message}`);
     }
@@ -158,9 +161,10 @@ async function checkOutboundIP() {
  * Call this at startup to fail fast if the proxy is misconfigured.
  */
 export async function testProxy() {
-    if (!config.proxyUrl) return true; // no proxy = nothing to test
+    const effectiveProxyUrl = config.proxyUrl || config.envProxyUrl;
+    if (!effectiveProxyUrl) return true; // no proxy = nothing to test
 
-    logger.info(`Testing proxy connection → ${maskProxyUrl(config.proxyUrl)} ...`);
+    logger.info(`Testing proxy connection → ${maskProxyUrl(effectiveProxyUrl)} ...`);
 
     // Show both IPs so user can verify which IP Polymarket sees
     await checkOutboundIP();
@@ -242,7 +246,7 @@ export async function testProxy() {
         return false;
     }
 
-    logger.success(`All proxy tests passed — connected via ${maskProxyUrl(config.proxyUrl)}`);
+    logger.success(`All proxy tests passed — connected via ${maskProxyUrl(effectiveProxyUrl)}`);
     return true;
 }
 

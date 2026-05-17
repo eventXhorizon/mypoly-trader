@@ -285,6 +285,98 @@ Rust worker 只负责分析和写库，不直接下单。
 8. 连续记录 4-8 周 paper 结果。
 9. 根据 paper 结果决定是否进入小资金实盘灰度。
 
+## 当前实现状态：Stage 1A
+
+Stage 1A 已提供一个最小可运行的地址评分入口：
+
+```bash
+npm run db:up
+npm run wallet-score -- 0x目标钱包地址
+```
+
+查看已评分地址排行榜：
+
+```bash
+npm run wallet-score -- --top 20
+```
+
+该命令会：
+
+- 从 Polymarket Data API 读取目标钱包公开历史 trades。
+- 从 Polymarket Data API 读取目标钱包 closed positions。
+- 写入本地 Postgres 分析表。
+- 计算第一版 `stage1a` 分数。
+- 输出 JSON 结果。
+- 不读取私钥。
+- 不初始化 CLOB 下单 client。
+- 不提交真实订单。
+
+Stage 1A 已计算：
+
+- `tradeCount`
+- `tradedMarketCount`
+- `settledMarketCount`
+- `closedPositionCount`
+- `realizedPnl`
+- `buyVolume`
+- `realizedRoi`
+- `grossProfit`
+- `grossLoss`
+- `profitFactor`
+- `maxDrawdownRatio`
+- `topMarketProfitShare`
+- `tradesPerDay`
+
+Stage 1A 暂时不计算：
+
+- `weightedClv`
+- `copySlippageEstimate`
+- 成交后 5 秒、30 秒、60 秒真实可成交价格。
+- orderbook depth。
+
+因此 Stage 1A 输出中：
+
+```text
+eligible = false
+```
+
+即使其他指标通过，也只会标记：
+
+```text
+provisionalEligible = true
+```
+
+这表示“值得进入下一步 CLV/滑点验证”，不是“可以实盘跟单”。
+
+### Stage 1A 表结构
+
+当前新增的 Postgres 表：
+
+| 表 | 用途 |
+| --- | --- |
+| `wallet_candidates` | 候选钱包、状态、来源、回填和评分时间 |
+| `wallet_historical_trades` | 标准化后的历史交易 |
+| `wallet_closed_positions` | 标准化后的已关闭仓位 |
+| `market_price_snapshots` | 预留给后续 CLOB midpoint/spread/depth 快照 |
+| `wallet_scores` | 地址评分结果、指标和原因码 |
+
+### Stage 1A 配置项
+
+可以通过 `.env` 调整：
+
+```env
+WALLET_ANALYTICS_TRADES_PATH=/trades
+WALLET_ANALYTICS_CLOSED_POSITIONS_PATH=/v1/closed-positions
+WALLET_ANALYTICS_TRADE_LIMIT=500
+WALLET_ANALYTICS_CLOSED_POSITION_LIMIT=500
+WALLET_ANALYTICS_PAGE_LIMIT=100
+WALLET_ANALYTICS_MIN_TRADES=50
+WALLET_ANALYTICS_MIN_SETTLED_MARKETS=30
+WALLET_ANALYTICS_MIN_PROFIT_FACTOR=1.2
+WALLET_ANALYTICS_MAX_DRAWDOWN=0.30
+WALLET_ANALYTICS_MAX_TOP_MARKET_PROFIT_SHARE=0.40
+```
+
 ## 当前不做的事
 
 - 不直接按胜率筛选。

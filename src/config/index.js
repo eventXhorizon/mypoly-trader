@@ -34,6 +34,16 @@ const config = {
   pnlSnapshotIntervalMs: parseInt(process.env.PNL_SNAPSHOT_INTERVAL || '60', 10) * 1000,
   pnlHistoryLimit: parseInt(process.env.PNL_HISTORY_LIMIT || '100', 10),
   multiWatchRequireDb: process.env.MULTI_WATCH_REQUIRE_DB !== 'false',
+  walletAnalyticsTradesPath: process.env.WALLET_ANALYTICS_TRADES_PATH || '/trades',
+  walletAnalyticsClosedPositionsPath: process.env.WALLET_ANALYTICS_CLOSED_POSITIONS_PATH || '/v1/closed-positions',
+  walletAnalyticsTradeLimit: parseInt(process.env.WALLET_ANALYTICS_TRADE_LIMIT || '500', 10),
+  walletAnalyticsClosedPositionLimit: parseInt(process.env.WALLET_ANALYTICS_CLOSED_POSITION_LIMIT || '500', 10),
+  walletAnalyticsPageLimit: parseInt(process.env.WALLET_ANALYTICS_PAGE_LIMIT || '100', 10),
+  walletAnalyticsMinTrades: parseInt(process.env.WALLET_ANALYTICS_MIN_TRADES || '50', 10),
+  walletAnalyticsMinSettledMarkets: parseInt(process.env.WALLET_ANALYTICS_MIN_SETTLED_MARKETS || '30', 10),
+  walletAnalyticsMinProfitFactor: parseFloat(process.env.WALLET_ANALYTICS_MIN_PROFIT_FACTOR || '1.2'),
+  walletAnalyticsMaxDrawdown: parseFloat(process.env.WALLET_ANALYTICS_MAX_DRAWDOWN || '0.30'),
+  walletAnalyticsMaxTopMarketProfitShare: parseFloat(process.env.WALLET_ANALYTICS_MAX_TOP_MARKET_PROFIT_SHARE || '0.40'),
 
   // Trade sizing
   sizeMode: process.env.SIZE_MODE || 'percentage', // "percentage" | "balance"
@@ -174,6 +184,7 @@ const config = {
   // ── Proxy (Polymarket API only, NOT Polygon RPC) ──────────────
   // Supports HTTP/HTTPS. Example: http://user:pass@host:port
   proxyUrl: process.env.PROXY_URL || '',
+  envProxyUrl: process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy || '',
 };
 
 // Validation for copy-trade bot
@@ -223,6 +234,36 @@ export function validateMultiWatchConfig() {
   }
   if (config.multiWatchRequireDb && !config.databaseUrl) {
     throw new Error('DATABASE_URL is required for multi-watch PnL recording. Set MULTI_WATCH_REQUIRE_DB=false to run without DB.');
+  }
+}
+
+export function validateWalletAnalyticsConfig() {
+  if (!config.databaseUrl) {
+    throw new Error('DATABASE_URL is required for wallet analytics.');
+  }
+  if (!Number.isInteger(config.walletAnalyticsTradeLimit) || config.walletAnalyticsTradeLimit <= 0) {
+    throw new Error('WALLET_ANALYTICS_TRADE_LIMIT must be a positive integer');
+  }
+  if (!Number.isInteger(config.walletAnalyticsClosedPositionLimit) || config.walletAnalyticsClosedPositionLimit <= 0) {
+    throw new Error('WALLET_ANALYTICS_CLOSED_POSITION_LIMIT must be a positive integer');
+  }
+  if (!Number.isInteger(config.walletAnalyticsPageLimit) || config.walletAnalyticsPageLimit <= 0 || config.walletAnalyticsPageLimit > 500) {
+    throw new Error('WALLET_ANALYTICS_PAGE_LIMIT must be an integer between 1 and 500');
+  }
+  if (!Number.isInteger(config.walletAnalyticsMinTrades) || config.walletAnalyticsMinTrades <= 0) {
+    throw new Error('WALLET_ANALYTICS_MIN_TRADES must be a positive integer');
+  }
+  if (!Number.isInteger(config.walletAnalyticsMinSettledMarkets) || config.walletAnalyticsMinSettledMarkets <= 0) {
+    throw new Error('WALLET_ANALYTICS_MIN_SETTLED_MARKETS must be a positive integer');
+  }
+  if (config.walletAnalyticsMinProfitFactor <= 0) {
+    throw new Error('WALLET_ANALYTICS_MIN_PROFIT_FACTOR must be > 0');
+  }
+  if (config.walletAnalyticsMaxDrawdown <= 0 || config.walletAnalyticsMaxDrawdown > 1) {
+    throw new Error('WALLET_ANALYTICS_MAX_DRAWDOWN must be between 0 and 1');
+  }
+  if (config.walletAnalyticsMaxTopMarketProfitShare <= 0 || config.walletAnalyticsMaxTopMarketProfitShare > 1) {
+    throw new Error('WALLET_ANALYTICS_MAX_TOP_MARKET_PROFIT_SHARE must be between 0 and 1');
   }
 }
 
